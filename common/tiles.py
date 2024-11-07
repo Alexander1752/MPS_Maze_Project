@@ -16,18 +16,15 @@ def from_code(code: int) -> 'Tile':
 
 class Tile:
     def __init__(self, code: int | None = None):
-        # Checks if the code received is the same as the one expected one
+        # Checks if the code received is the same as the one expected
         if code is not None:
-            if getattr(self, "_code", None) != code: # only available if `_code` is defined in a subclass
-                raise ValueError(f'"{type(self).__name__}" has code {self._code}, but code {code} was provided')
-            self._code = code
-
-    @property # this is a property; one accesses it by writing `wall.code`, not `wall.code()`
-    def code(self):
-        return self._code
+            class_code = getattr(self, "code", None) # only available if `code` is defined in a subclass
+            if class_code is not None and class_code != code:
+                raise ValueError(f'"{type(self).__name__}" has code {class_code}, but code {code} was provided')
+            self.code = code
 
     @property
-    def type(self):
+    def type(self): # this is a property; one accesses it by writing `wall.type`, not `wall.type()`
         return type(self)
 
     def visit(self, direction) -> effects.Effect:
@@ -36,37 +33,37 @@ class Tile:
 
 class UnknownTile(Tile):
     """ Not defined in the game specs, proposed value for a tile not known by an agent """
-    _code = 1
+    code = 1
 
     def visit(self, direction) -> effects.Effect:
         raise NotImplementedError("Tried visiting an UnknownTile")
 
 class Wall(Tile):
-    _code = 0
+    code = 0
     def visit(self, direction) -> effects.Effect:
         return effects.WallEffect(direction)
 
 class Path(Tile):
-    _code = 255 # nothing special to do compared to a base Entity, no other methods
+    code = 255 # nothing special to do compared to a base Entity, no other methods
 
 class Entrance(Tile):
-    _code = 64
+    code = 64
 
 class Exit(Tile):
-    _code = 182
+    code = 182
     def visit(self, direction) -> effects.Effect:
         pass # TODO win game here
 
 class Xray(Tile):
-    _code = 16
+    code = 16
     def visit(self, direction) -> effects.Effect:
         return effects.XrayEffect(direction)
 
 class Fog(Tile):
-    _code = 32
+    code = 32
 
 class Tower(Tile):
-    _code = 224
+    code = 224
 
 class Trap(Tile, ABC):
     def __init__(self, code: int): # must supply a code to init a `Trap` object
