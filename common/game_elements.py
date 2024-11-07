@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 from collections import namedtuple
 import numpy as np
+from PIL import Image
 from typing import List, Dict, Tuple
 
 import common.tiles as tiles
@@ -54,9 +55,13 @@ class Map(np.ndarray):
         agent_map: bool = False,
         width:  int = 0,
         height: int = 0,
+        nparr: np.ndarray | None = None
     ):
-        size = (width if width else cls.MAX_WIDTH, height if height else cls.MAX_HEIGHT)
-        obj = np.ones(size, dtype=np.uint8).view(cls) # init full of ones (unknown) -- might change based on feedback
+        if nparr is not None:
+            obj = nparr.view(cls)
+        else:
+            size = (width if width else cls.MAX_WIDTH, height if height else cls.MAX_HEIGHT)
+            obj = np.ones(size, dtype=np.uint8).view(cls) # init full of ones (unknown) -- might change based on feedback
         # add the new attribute to the created instance
         if anchor is not None:
             obj.anchor = anchor
@@ -71,6 +76,15 @@ class Map(np.ndarray):
     def __array_finalize__(self, obj):
         if obj is None: return
         self.anchor = getattr(obj, 'anchor', None)
+
+    def write_to_file(self, path):
+        img = Image.fromarray(self, mode="L")  # "L" mode is for 8-bit grayscale
+        img.save(path)
+
+    @classmethod
+    def load_from_file(cls, path):
+        img = Image.open(path).convert("L")  # Ensure it's in grayscale mode ("L")
+        return cls(nparr=np.array(img, dtype=np.uint8))
 
 
 class GameState:
