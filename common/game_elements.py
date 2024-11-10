@@ -60,7 +60,7 @@ class Map(np.ndarray):
         if nparr is not None:
             obj = nparr.view(cls)
         else:
-            size = (width if width else cls.MAX_WIDTH, height if height else cls.MAX_HEIGHT)
+            size = (height if height else cls.MAX_HEIGHT, width if width else cls.MAX_WIDTH)
             obj = np.ones(size, dtype=np.uint8).view(cls) # init full of ones (unknown) -- might change based on feedback
         # add the new attribute to the created instance
         if anchor is not None:
