@@ -1,5 +1,5 @@
 import argparse
-from queue import LifoQueue
+from collections import deque
 from pathlib import Path
 import random
 from typing import List
@@ -42,10 +42,10 @@ def neighbors(maze: Map, cell: Pos, value: int, generate_maze: bool=False) -> Li
     neighbors = []
 
     # Iterates through four neighbors in the order:
-    # [i - 2][j] 
-    # [i][j - 2] 
-    # [i + 2][j]
-    # [i][j + 2]
+    # [i - 1][j] 
+    # [i][j - 1] 
+    # [i + 1][j]
+    # [i][j + 1]
     for i in range(4):
         n = list(cell)
         n[i % 2] += ((i - i % 2) or -2) // (1 if generate_maze else 2)
@@ -56,34 +56,42 @@ def neighbors(maze: Map, cell: Pos, value: int, generate_maze: bool=False) -> Li
 
     return neighbors
 
-def valid_exits(maze: Map, entrance: Pos, min_dist_from_entrance: int):
-    MIN_CHOICE_SIZE = 100
-
+def maze_order(maze: Map, start = Pos(1,1), prev_longest = 0):
     visited = maze.copy()
-    visited[entrance] = tiles.Entrance.code
+    visited[start] = tiles.Wall.code
+    prev = {}
 
-    # The stack contains the node and the minimum distance to it
-    stack = LifoQueue()
-    stack.put((entrance, 0))
     max_dist = 0
+    furthest = start
 
-    valid_exits = []
-    while not stack.empty() and len(valid_exits) < MIN_CHOICE_SIZE:
-        node, dist = stack.get()
-        visited[node] = tiles.Wall.code
-        max_dist = max(max_dist, dist)
+    # The queue contains the position and the minimum distance to it
+    queue = deque()
+    queue.append((start, 0))
+    while queue:
+        pos, dist = queue.popleft()
         dist += 1
+        max_dist, furthest = max((max_dist, furthest), (dist, pos))
 
         # Explore the neighboring nodes
-        for neighbor in neighbors(visited, node, tiles.Path.code):
-            if dist >= min_dist_from_entrance:
-                valid_exits.append(neighbor)
-                print("Valid exit no.", len(valid_exits), "found")
+        for neighbor in neighbors(visited, pos, tiles.Path.code):
+            visited[neighbor] = tiles.Wall.code
+            queue.append((neighbor, dist))
+            prev[neighbor] = pos
 
-            stack.put((neighbor, dist))
+    if max_dist > prev_longest:
+        # Start from one end of the maze
+        # (the last neighbor was the farthest, so the end of the path)
+        return maze_order(maze, furthest, max_dist)
+    else:
+        order = []
+        pos = neighbor # same thing, last neighbor was the farthest
 
-    print("Max dist:", max_dist)
-    return valid_exits
+        while pos != start:
+            order.append(pos)
+            pos = prev[pos]
+
+        order.append(start)
+        return order
 
 def generate_walls(width, height):
     # Fill maze with walls
@@ -140,26 +148,25 @@ def generate_maze(width, height, seed=None, max_special_tiles=1):
     height |= 1
 
     maze, path_count = generate_walls(width, height)
+    loop_order = maze_order(maze)
+    print("Loop length:", len(loop_order))
 
-    potential_exits = []
-    tries = 0
-    while not potential_exits:
-        tries += 1
-        print("Try no.", tries)
+    # TODO remove
+    tmp = maze.copy()
+    for pos in loop_order:
+        tmp[pos] = tiles.Fog.code
+    tmp.write_to_file("temp.png")
 
-        # Randomly choose entrance location
-        entrance = (0, 0)
-        while maze[entrance] == tiles.Wall.code:
-            entrance = Pos(random.randint(1, height-2), random.randint(1, width-2))
-
-        potential_exits = valid_exits(maze, entrance, path_count // 2)
+    # Randomly choose entrance and exit locations with respect to the 50% rule
+    entrance_idx = random.randint(0, len(loop_order) - path_count // 2 - 1)
+    entrance = loop_order[entrance_idx]
+    exit = random.choice(loop_order[entrance_idx + path_count // 2:])
 
     maze[entrance] = tiles.Entrance.code
-    print("Candidates:", potential_exits) # TODO remove
-    exit = random.choice(potential_exits)
     maze[exit] = tiles.Exit.code
 
     print("Entrance:", entrance)
+    print("Exit:", exit)
 
     return maze
 
