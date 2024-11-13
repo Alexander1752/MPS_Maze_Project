@@ -21,6 +21,7 @@ class WallEffect(Effect):
     def activate(self, game_state: 'ge.GameState'):
         game_state.move(ge.Dir.OPPOSITE[self._direction])
         game_state.decrease_next_round_turns()
+        return '0' # Hit a wall => unsuccessful
 
 class TrapEffect(Effect, ABC):
     def __init__(self, direction, n: int) -> None:

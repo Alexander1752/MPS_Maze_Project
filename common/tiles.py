@@ -29,7 +29,7 @@ class Tile:
 
     def visit(self, direction) -> effects.Effect:
         """ Returns the effect activated by visiting this tile """
-        return effects.NoEffect
+        return effects.NoEffect(direction)
 
 class UnknownTile(Tile):
     """ Not defined in the game specs, proposed value for a tile not known by an agent """

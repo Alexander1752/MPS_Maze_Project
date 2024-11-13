@@ -9,7 +9,6 @@ import common.tiles as tiles
 
 Pos = namedtuple("Pos", "x y")
 
-
 class Dir:
     N = 'N'
     S = 'S'
@@ -28,13 +27,13 @@ class Dir:
         """ Gets a position and a direction and returns the position obtained by going in said direction. """
         match direction:
             case cls.N:
-                return Pos(pos.x, pos.y + 1)
-            case cls.S:
-                return Pos(pos.x, pos.y - 1)
-            case cls.E:
-                return Pos(pos.x + 1, pos.y)
-            case cls.W:
                 return Pos(pos.x - 1, pos.y)
+            case cls.S:
+                return Pos(pos.x + 1, pos.y)
+            case cls.E:
+                return Pos(pos.x, pos.y + 1)
+            case cls.W:
+                return Pos(pos.x, pos.y - 1)
             case _:
                 raise ValueError(f'"{direction}" is not a valid direction')
 
@@ -55,10 +54,11 @@ class Map(np.ndarray):
         agent_map: bool = False,
         width:  int = 0,
         height: int = 0,
-        nparr: np.ndarray | None = None
+        nparr: np.ndarray | None = None # harta, matrice care tine codurile de la 0-255
     ):
         if nparr is not None:
             obj = nparr.view(cls)
+            obj.entrance = Pos(*np.argwhere(obj == tiles.Entrance.code)[0])
         else:
             size = (height if height else cls.MAX_HEIGHT, width if width else cls.MAX_WIDTH)
             obj = np.ones(size, dtype=np.uint8).view(cls) # init full of ones (unknown) -- might change based on feedback
@@ -76,6 +76,7 @@ class Map(np.ndarray):
     def __array_finalize__(self, obj):
         if obj is None: return
         self.anchor = getattr(obj, 'anchor', None)
+        self.entrance = getattr(obj, 'entrance', None)
 
     def write_to_file(self, path):
         img = Image.fromarray(self, mode="L")  # "L" mode is for 8-bit grayscale
@@ -107,7 +108,13 @@ class GameState:
         self.maps = maps if maps else [Map(anchor=anchor, agent_map=agent)] # list of maps; all parts except the agent will contain only one map, the current one
         self.current_map = self.maps[-1] # the only map actually used, except for the AI (might not get the chance to actually implement that after all)
 
-        self.pos = pos if pos is not None else self.current_map.anchor
+        if pos is not None:
+            self.pos = pos
+        elif agent:
+            self.pos = self.current_map.anchor
+        else:
+            # Extract the position of the entrance from the map
+            self.pos = self.current_map.entrance
 
         self.turns = turns if turns is not None else self.MAX_MOVES_PER_TURN # no. of turns for the current round
         self.next_round_turns = next_round_turns if next_round_turns is not None else self.MAX_MOVES_PER_TURN
@@ -116,14 +123,16 @@ class GameState:
 
         self.portals: Dict[int, Tuple] = portals if portals else {}
 
+    # TODO: this will need to be changed -- ar fi bine sa dea return la vizibilitate. Pot sa fac chestia asta pe
+    # pe server si asta ar trebui sa dea macar un raspuns de ok sau nu.
     def perform_command(self, move: str): # XXX maybe consider returning here the command result, visibility around agent etc.
         """ Applies a command on this game state """
         self.turns -= 1
         match move:
             case 'X':
-                self.use_xray()
+                return self.use_xray()
             case 'N' | 'S' | 'E' | 'W':
-                self.move(move)
+                return self.move(move)
             case _:
                 raise ValueError(f'"{move}" is not a valid move')
 
@@ -131,7 +140,9 @@ class GameState:
         """ Applies a move command on this game state (not X-Ray) """
         self.pos = Dir.move(self.pos, direction) # move into the tile, even if wall (its effect will move us back where we started from)
         effect = tiles.from_code(self.current_map[self.pos.x][self.pos.y]).visit(direction)
-        effect.activate(self)
+        if effect.activate(self) is not None:
+            return '0'
+        return '1'
 
     def decrease_next_round_turns(self, amount: int = 1):
         self.next_round_turns -= amount
