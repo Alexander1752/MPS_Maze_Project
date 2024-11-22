@@ -92,6 +92,8 @@ class GameState:
     MAX_MOVES_PER_TURN = 10
     START_XRAY_POINTS = 10
 
+
+    #TODO: add visibility 
     def __init__(
         self,
         *,
@@ -104,6 +106,7 @@ class GameState:
         next_round_turns: int | None = None,
         xray_points: int | None = None,
         agent: bool = False,
+        visibility: int = 2,
     ) -> None:
         self.maps = maps if maps else [Map(anchor=anchor, agent_map=agent)] # list of maps; all parts except the agent will contain only one map, the current one
         self.current_map = self.maps[-1] # the only map actually used, except for the AI (might not get the chance to actually implement that after all)
@@ -122,6 +125,7 @@ class GameState:
         self.xray_points = xray_points if xray_points is not None else self.START_XRAY_POINTS
 
         self.portals: Dict[int, Tuple] = portals if portals else {}
+        self.visibility = visibility
 
     # TODO: this will need to be changed -- ar fi bine sa dea return la vizibilitate. Pot sa fac chestia asta pe
     # pe server si asta ar trebui sa dea macar un raspuns de ok sau nu.
