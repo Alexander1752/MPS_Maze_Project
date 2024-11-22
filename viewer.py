@@ -10,7 +10,7 @@ root.title("Maze Viewer")
 DEFAULT_WIDTH_VALUE = 1920
 DEFAULT_HEIGHT_VALUE = 1080
 
-SCALE = 1.0  # Initial scale factor
+SCALE = 1.0
 WIDTH_SCALE = 1.0
 HEIGHT_SCALE = 1.0
 
@@ -19,17 +19,15 @@ img_tk = None  # To keep a reference to the image
 # Variables for dragging
 drag_data = {"x": 0, "y": 0, "item": None}
 
-# Initial character position in the original image (scaled)
-initial_character_position = [19, 9]  # Using a list for mutability
+)
+initial_character_position = [19, 9] 
 
-# Store the path the character has walked
 path = []
 
-# Function to open and display the image
+
 def open_image():
     global img_tk, WIDTH_SCALE, HEIGHT_SCALE, SCALE, drag_data
     
-    # Load the image
     img = Image.open("maze.png")
     width, height = img.size
     
@@ -62,7 +60,7 @@ def open_image():
 
 # Function to handle arrow key movements
 def move_character(event):
-    step = 10  # Number of pixels to move per key press
+    step = 10 
     
     if event.keysym == 'Up':
         initial_character_position[1] -= step / (SCALE * HEIGHT_SCALE)
@@ -83,9 +81,8 @@ def move_character(event):
 
 # Function to draw the path
 def draw_path(x, y):
-    # Define the path color and size
-    path_color = 'blue'  # Color of the path
-    path_size = 5  # Size of the path marker (could be a small circle or square)
+    path_color = 'blue'
+    path_size = 5 
     
     # Draw a small rectangle (or circle) at the character's position to mark the path
     canvas.create_rectangle(x - path_size, y - path_size, x + path_size, y + path_size, fill=path_color, outline='')
@@ -118,34 +115,27 @@ def on_drag(event):
     drag_data["x"] = event.x
     drag_data["y"] = event.y
 
-# Create a canvas widget
 canvas = tk.Canvas(root, width=DEFAULT_WIDTH_VALUE, height=DEFAULT_HEIGHT_VALUE)
 canvas.pack(expand=True, fill='both')
 
-# Load and resize the character image to 35x35 pixels
 character_image = Image.open("character_model.png")
 character_image = character_image.resize((35, 35), Image.Resampling.NEAREST)
 character_photo = ImageTk.PhotoImage(character_image)
 
-# Add the resized character to the canvas
 character = canvas.create_image(19, 9, anchor=tk.NW, image=character_photo)
 
-# Bind mouse scroll events for cross-platform compatibility
-canvas.bind('<MouseWheel>', zoom)  # For Windows and Linux
-canvas.bind('<Button-4>', zoom)  # For some Linux systems
-canvas.bind('<Button-5>', zoom)  # For some Linux systems
+canvas.bind('<MouseWheel>', zoom) 
+canvas.bind('<Button-4>', zoom)
+canvas.bind('<Button-5>', zoom)
 
-# Bind mouse events for dragging
 canvas.bind('<ButtonPress-1>', on_press)
 canvas.bind('<B1-Motion>', on_drag)
 
-# Bind arrow keys for character movement
 root.bind('<Up>', move_character)
 root.bind('<Down>', move_character)
 root.bind('<Left>', move_character)
 root.bind('<Right>', move_character)
 
-# Display the initial image
 open_image()
 
 root.mainloop()
