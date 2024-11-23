@@ -74,6 +74,9 @@ class Trap(Tile, ABC):
     def visit(self, direction) -> effects.Effect:
         pass # must be implemented by inheritors
 
+class UnknownTrap(Trap):
+    code = 90
+
 class MovesTrap(Trap):
     @property
     def moves(self):
@@ -129,10 +132,11 @@ CODE_TO_TYPE[182] = Exit
 # CODE_TO_TYPE[32]  = Fog
 # CODE_TO_TYPE[224] = Tower
 
-# CODE_TO_TYPE[96:101]  =  5 * [MovesTrap]
-# CODE_TO_TYPE[101:106] =  5 * [RewindTrap]
-# CODE_TO_TYPE[106:111] =  5 * [ForwardTrap]
-# CODE_TO_TYPE[111:116] =  5 * [BackwardTrap]
-# CODE_TO_TYPE[150:170] = 20 * [Portal]
+CODE_TO_TYPE[90] = UnknownTrap
+CODE_TO_TYPE[96:101]  =  5 * [MovesTrap]
+CODE_TO_TYPE[101:106] =  5 * [RewindTrap]
+CODE_TO_TYPE[106:111] =  5 * [ForwardTrap]
+CODE_TO_TYPE[111:116] =  5 * [BackwardTrap]
+CODE_TO_TYPE[150:170] = 20 * [Portal]
 
 # CODE_TO_TYPE[1] = UnknownTile

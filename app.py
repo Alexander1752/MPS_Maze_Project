@@ -1,11 +1,11 @@
 """This file contains the implementation of the server"""
 import argparse
 from flask import Flask, request, jsonify
-from flask_socketio import SocketIO, send, emit
 from pathlib import Path
-from typing import List
+from typing import List, Dict
 
 from common.game_elements import Map, GameState
+import common.tiles as tiles
 
 
 def get_parser():
@@ -24,16 +24,13 @@ def get_parser():
 
 server = Flask(__name__)
 
-# Will be used to determine the socket connection in order to identify the clients
-socketio = SocketIO(server)
-
 MAX_COMMANDS_NO = 10
 COMMAND_NAME_FIELD = 'name'
 COMMAND_RESULT_FIELD = 'successful'
 VIEW_FIELD = 'view'
 MOVES_FIELD = 'moves'
 UUID_CURRENT = 0
-AGENTS = {} # dict to identify agents using uuid
+AGENTS : Dict[str, GameState] = {} # dict to identify agents using uuid
 FRIENDLY_MODE = False
 MAZE = None
 
@@ -82,7 +79,7 @@ def create_friendly_response():
     response['x'] = str(int(current_game_state.pos.x))
     response['y'] = str(int(current_game_state.pos.y))
 
-    current_map = current_game_state.maps[0]
+    current_map = current_game_state.current_map
 
     response['width'] = str(len(current_map[0]))
     response['height'] = str(len(current_map))
@@ -139,10 +136,10 @@ def check_neigh(curr_i: int, curr_j: int, searched_i: int, searched_j: int):
 
 def disguise_trap(agent_pos_x: int, agent_pos_y: int, tile_pos_x: int, tile_pos_y : int, tile: int):
     # Trap tile, no idea how to do it otherwise
-    if 96 <= tile <= 115:
+    if isinstance(tiles.from_code(tile), tiles.Trap):
         if check_neigh(agent_pos_x, agent_pos_y, tile_pos_x, tile_pos_y) is True:
-            return 90
-        return 255 # act as path if not close enough
+            return tiles.UnknownTrap.code
+        return tiles.Path.code # act as path if not close enough
 
     return tile
 
@@ -162,9 +159,10 @@ def get_visibility(current_game_state: GameState):
     for i in range(x - visibility, x + visibility + 1):
         for j in range(y - visibility, y + visibility + 1):
             if i < 0 or i >= len(current_game_state.maps[0]):
-                current_visibility[matrix_i][matrix_j] = 0 # If I go out-of-bounds, print a wall
+                # If I go out-of-bounds, print a wall
+                current_visibility[matrix_i][matrix_j] = tiles.Wall.code
             elif j < 0 or j >= len(current_game_state.maps[0][0]):
-                current_visibility[matrix_i][matrix_j] = 0
+                current_visibility[matrix_i][matrix_j] = tiles.Wall.code
             else:
                 if FRIENDLY_MODE:
                     # Send the visibility as it is
@@ -191,9 +189,8 @@ def check_moves(agent_uuid: str, moves: List[str]):
         response[command_no][COMMAND_RESULT_FIELD] = AGENTS[agent_uuid].perform_command(move)
 
         # Check if after the previous move, the agent reached the exit
-        agent_position_x = AGENTS[agent_uuid].pos.x
-        agent_position_y = AGENTS[agent_uuid].pos.y
-        if AGENTS[agent_uuid].maps[0][agent_position_x][agent_position_y] == 182:
+        agent_pos = AGENTS[agent_uuid].pos
+        if AGENTS[agent_uuid].current_map[agent_pos] == tiles.Exit.code:
             end_reached = True
             break
 
