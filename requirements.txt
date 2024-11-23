@@ -2,3 +2,5 @@ numpy
 pillow
 flask
 requests
+sseclient
+keyboard
