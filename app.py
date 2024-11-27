@@ -6,7 +6,7 @@ from typing import List, Dict
 import time
 import queue
 
-from common.game_elements import Map, GameState
+from common.game_elements import Map, GameState, Pos
 import common.tiles as tiles
 
 
@@ -31,7 +31,7 @@ COMMAND_NAME_FIELD = 'name'
 COMMAND_RESULT_FIELD = 'successful'
 VIEW_FIELD = 'view'
 MOVES_FIELD = 'moves'
-UUID_CURRENT = 0
+UUID_CURRENT = 0 # TODO change to a more suitable, random UUID scheme
 AGENTS : Dict[str, GameState] = {} # dict to identify agents using uuid
 AGENTS_TIME : Dict[str, float] = {} # dict to identify the agent and the connection time
 FRIENDLY_MODE = False
@@ -58,8 +58,8 @@ def register_agent():
     if request.is_json:
         if not request.get_json(): # Request is empty
             UUID_CURRENT += 1
-            # Suppose we have maximum number of next_round_turns available
-            AGENTS[str(UUID_CURRENT)] = GameState(maps=[MAZE], turns=10, next_round_turns=10, xray_points=10)
+            # Suppose we have maximum number of next_round_moves available
+            AGENTS[str(UUID_CURRENT)] = GameState(maps=[MAZE], moves=10, next_round_moves=10, xray_points=10)
 
             # Register the first time the client contacted the server
             AGENTS_TIME[str(UUID_CURRENT)] = int(time.time())
@@ -95,7 +95,7 @@ def create_friendly_response():
     response['width'] = str(len(current_map[0]))
     response['height'] = str(len(current_map))
 
-    response['view'] = get_visibility(current_game_state)
+    response['view'] = disguise_traps(current_game_state)
 
     return response
 
@@ -114,6 +114,8 @@ def receive_client_moves():
             # TODO: when a client gets over the allowed time limit, maybe remove the UUID and reset the connection
             return jsonify({'end':'0'}), 200
 
+        AGENTS_TIME[agent_uuid] = time.time()
+
         moves = request.get_json()['input']
 
         if len(moves) > 10:
@@ -126,7 +128,7 @@ def create_response_json(moves: List[str]):
     response = {}
 
     for i in range(MAX_COMMANDS_NO):
-        command_no = f"command{i+1}"
+        command_no = f"command_{i+1}"
         response[command_no] = {
             COMMAND_NAME_FIELD: "",
             COMMAND_RESULT_FIELD: "",
@@ -150,48 +152,25 @@ def check_neigh(curr_i: int, curr_j: int, searched_i: int, searched_j: int):
 
     return False
 
-def disguise_trap(agent_pos_x: int, agent_pos_y: int, tile_pos_x: int, tile_pos_y : int, tile: int):
-    # Trap tile, no idea how to do it otherwise
-    if isinstance(tiles.from_code(tile), tiles.Trap):
-        if check_neigh(agent_pos_x, agent_pos_y, tile_pos_x, tile_pos_y) is True:
-            return tiles.UnknownTrap.code
-        return tiles.Path.code # act as path if not close enough
-
-    return tile
-
-def get_visibility(current_game_state: GameState):
-    """Returns a matrix that represents the visible area around the player"""
+def disguise_traps(game_state: GameState):
     global FRIENDLY_MODE
 
-    x = current_game_state.pos.x
-    y = current_game_state.pos.y
-    visibility = current_game_state.visibility
+    view = game_state.view()
+    # Assume we receive a square matrix with an odd length
+    agent_pos = Pos(len(view) // 2, len(view) // 2)
 
-    current_visibility = [[0 for i in range(2 * visibility + 1)] for j in range(2 * visibility + 1)]
+    if FRIENDLY_MODE:
+        return str(view) # TODO change serialization
 
-    # I want to avoid translation at matrix indexes, because of this, I will fill the
-    # visibility matrix manually
-    matrix_i, matrix_j = 0, 0
-    for i in range(x - visibility, x + visibility + 1):
-        for j in range(y - visibility, y + visibility + 1):
-            if i < 0 or i >= len(current_game_state.maps[0]):
-                # If I go out-of-bounds, print a wall
-                current_visibility[matrix_i][matrix_j] = tiles.Wall.code
-            elif j < 0 or j >= len(current_game_state.maps[0][0]):
-                current_visibility[matrix_i][matrix_j] = tiles.Wall.code
-            else:
-                if FRIENDLY_MODE:
-                    # Send the visibility as it is
-                    current_visibility[matrix_i][matrix_j] = int(current_game_state.current_map[i][j])
-                else:
+    for i in range(len(view)):
+        for j in range(len(view)):
+            # Trap tile, no idea how to do it otherwise
+            if isinstance(tiles.from_code(view[i][j]), tiles.Trap):
+                if check_neigh(agent_pos.x, agent_pos.y, i, j) is True:
                     # The tile is adjacent to the player pos
-                    current_visibility[matrix_i][matrix_j] = int(disguise_trap(x, y, i, j, current_game_state.current_map[i][j]))
-            matrix_j += 1
-        matrix_i += 1
-        matrix_j = 0
+                    view[i][j] = tiles.UnknownTrap.code
 
-    return current_visibility
-
+    return str(view) # TODO change serialization
 
 def check_moves(agent_uuid: str, moves: List[str]):
     """"""
@@ -201,10 +180,10 @@ def check_moves(agent_uuid: str, moves: List[str]):
     end_reached = False
 
     for i, move in enumerate(moves):
-        command_no = f"command{i + 1}"
+        command_no = f"command_{i + 1}"
 
         command_result = AGENTS[agent_uuid].perform_command(move)
-        response[command_no][COMMAND_RESULT_FIELD] = command_result
+        response[command_no][COMMAND_RESULT_FIELD] = str(1 if command_result is None else command_result)
 
         # check if the command 
         if command_result == '1':
@@ -216,9 +195,10 @@ def check_moves(agent_uuid: str, moves: List[str]):
             end_reached = True
             break
 
-        response[command_no][VIEW_FIELD] = str(get_visibility(AGENTS[agent_uuid]))
+        response[command_no][VIEW_FIELD] = disguise_traps(AGENTS[agent_uuid])
 
-    response[MOVES_FIELD] = str(AGENTS[agent_uuid].next_round_turns)
+    response[MOVES_FIELD] = str(AGENTS[agent_uuid].next_round_moves)
+    AGENTS[agent_uuid].new_round()
 
     if end_reached:
         return {"end":"1"}
@@ -229,8 +209,8 @@ def check_moves(agent_uuid: str, moves: List[str]):
 def initial_data():
     response = {}
 
-    response["enterance_x"] = str(MAZE.entrance[0])
-    response["enterance_y"] = str(MAZE.entrance[1])
+    response["entrance_x"] = str(MAZE.entrance[0])
+    response["entrance_y"] = str(MAZE.entrance[1])
     response["maze_file"] = str(ARGS.maze)
 
     return jsonify(response)
@@ -251,4 +231,4 @@ if __name__ == '__main__':
     print(ARGS.maze)
     MAZE = Map.load_from_file(ARGS.maze)
 
-    server.run(debug=True, threaded=True)
+    server.run(debug=True, threaded=True) # TODO add port arg

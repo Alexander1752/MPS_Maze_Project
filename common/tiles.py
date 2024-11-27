@@ -52,7 +52,7 @@ class Entrance(Tile):
 class Exit(Tile):
     code = 182
     def visit(self, direction) -> effects.Effect:
-        pass # TODO win game here
+        return effects.NoEffect(direction) # TODO maybe change later
 
 class Xray(Tile):
     code = 16
@@ -76,6 +76,9 @@ class Trap(Tile, ABC):
 
 class UnknownTrap(Trap):
     code = 90
+
+    def visit(self, direction) -> effects.Effect:
+        raise NotImplementedError("Tried visiting an UnknownTrap")
 
 class MovesTrap(Trap):
     @property
@@ -139,4 +142,4 @@ CODE_TO_TYPE[106:111] =  5 * [ForwardTrap]
 CODE_TO_TYPE[111:116] =  5 * [BackwardTrap]
 CODE_TO_TYPE[150:170] = 20 * [Portal]
 
-# CODE_TO_TYPE[1] = UnknownTile
+CODE_TO_TYPE[1] = UnknownTile

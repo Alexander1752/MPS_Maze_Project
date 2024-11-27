@@ -20,7 +20,7 @@ class NoEffect(Effect):
 class WallEffect(Effect):
     def activate(self, game_state: 'ge.GameState'):
         game_state.move(ge.Dir.OPPOSITE[self._direction])
-        game_state.decrease_next_round_turns()
+        game_state.decrease_next_round_moves()
         return '0' # Hit a wall => unsuccessful
 
 class TrapEffect(Effect, ABC):
@@ -30,7 +30,7 @@ class TrapEffect(Effect, ABC):
 
 class MovesDecreaseEffect(TrapEffect):
     def activate(self, game_state: 'ge.GameState'):
-        game_state.decrease_next_round_turns(self._n)
+        game_state.decrease_next_round_moves(self._n)
 
 class XrayEffect(Effect):
     def activate(self, game_state: 'ge.GameState'):

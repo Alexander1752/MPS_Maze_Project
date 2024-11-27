@@ -40,8 +40,8 @@ def get_character_position():
     global initial_character_position
 
     # Invert positions, not sure why
-    initial_character_position[0] = int(character_pos_response.json()['enterance_y'])
-    initial_character_position[1] = int(character_pos_response.json()['enterance_x'])
+    initial_character_position[0] = int(character_pos_response.json()['entrance_y'])
+    initial_character_position[1] = int(character_pos_response.json()['entrance_x'])
     global MAZE_FILE
     MAZE_FILE = str(character_pos_response.json()['maze_file'])
 
