@@ -204,14 +204,16 @@ def generate_maze(width, height, seed=None, max_special_tiles=1, * , retry=False
 
     return maze
 
-def main():
+def main(args=None):
     parser = get_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(args)
 
     maze = generate_maze(args.width, args.height, seed=args.seed)
 
     # Convert maze to image
     maze.write_to_file(args.output)
+
+    return maze
 
 if __name__ == "__main__":
     main()

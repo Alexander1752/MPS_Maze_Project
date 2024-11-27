@@ -225,10 +225,16 @@ def generate_events():
 def stream():
     return Response(generate_events(), content_type='text/event-stream')
 
-if __name__ == '__main__':
+def main(args=None):
+    global ARGS
+    global MAZE
+
     parser = get_parser()
-    ARGS = parser.parse_args()
+    ARGS = parser.parse_args(args)
     print(ARGS.maze)
     MAZE = Map.load_from_file(ARGS.maze)
 
     server.run(debug=True, threaded=True) # TODO add port arg
+
+if __name__ == '__main__':
+    main()

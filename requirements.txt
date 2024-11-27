@@ -4,3 +4,4 @@ flask
 requests
 sseclient
 keyboard
+pytest

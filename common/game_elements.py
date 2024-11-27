@@ -90,7 +90,6 @@ class Map(np.ndarray):
     ):
         if nparr is not None:
             obj = nparr.view(cls)
-            obj.entrance = Pos(*np.argwhere(obj == tiles.Entrance.code)[0])
         else:
             size = (int(height) if height else cls.MAX_HEIGHT, int(width) if width else cls.MAX_WIDTH)
             obj = np.ones(size, dtype=np.uint8).view(cls) # init full of ones (unknown) -- might change based on feedback
@@ -102,13 +101,18 @@ class Map(np.ndarray):
             obj[obj.anchor.x][obj.anchor.y] = tiles.Entrance.code
         else:
             obj.anchor = cls.ANCHOR
+
+        entrance_tiles = list(np.argwhere(obj == tiles.Entrance.code))
+        if len(entrance_tiles):
+            obj.entrance = Pos(*entrance_tiles[0])
+
         # return the newly created object:
         return obj
 
     def __array_finalize__(self, obj):
         if obj is None: return
-        self.anchor = getattr(obj, 'anchor', None)
-        self.entrance = getattr(obj, 'entrance', None)
+        self.anchor: Pos | None = getattr(obj, 'anchor', None)
+        self.entrance: Pos | None = getattr(obj, 'entrance', None)
 
     def in_map(self, *args):
         if len(args) == 1:

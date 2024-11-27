@@ -137,9 +137,9 @@ def run(game_state: GameState, stack: List[Node], url, uuid):
     game_state.next_round_moves = int(response[MOVES])    
     game_state.new_round()
 
-def main():
+def main(args=None):
     parser = get_parser()
-    args = parser.parse_args()
+    args = parser.parse_args(args)
 
     url = args.address
     if args.port:
