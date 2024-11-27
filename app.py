@@ -185,8 +185,8 @@ def check_moves(agent_uuid: str, moves: List[str]):
         command_result = AGENTS[agent_uuid].perform_command(move)
         response[command_no][COMMAND_RESULT_FIELD] = str(1 if command_result is None else command_result)
 
-        # check if the command 
-        if command_result == '1':
+        # check if the command
+        if command_result == '1' and move in ['N', 'S', 'E', 'W']:
             EVENT_QUEUE.put(move)
 
         # Check if after the previous move, the agent reached the exit

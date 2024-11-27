@@ -101,7 +101,7 @@ def scroll(event):
 
 # Function to handle arrow key movements
 def move_character(position):
-    step = 10  # Number of pixels to move per key press
+    step = 40  # Number of pixels to move per key press
     
     if position == 'Up':
         initial_character_position[1] -= step / (SCALE * HEIGHT_SCALE)
