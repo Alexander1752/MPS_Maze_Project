@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 import argparse
 from collections import namedtuple
-from enum import Enum
 import logging
 from typing import List, Dict
 import requests
@@ -31,11 +30,6 @@ END = 'end'
 
 Node = namedtuple("Node", "x y dir")
 
-uuid = None
-url: str = None
-game_state: GameState | None = None
-stack: List[Node] | None = None
-
 def get_parser():
     # Create the argument parser
     parser = argparse.ArgumentParser(description="Start this agent.")
@@ -53,7 +47,7 @@ def get_parser():
 
     return parser
 
-def bfs(stack: List[Node]):
+def bfs(game_state: GameState, stack: List[Node]):
     node = stack.pop()
     stack.append(Node(node.x, node.y, Dir.NEXT[node.dir]))
 
@@ -79,13 +73,9 @@ def bfs(stack: List[Node]):
         # print("Visiting", prev_pos) # TODO remove
         return undo_move
 
-    return bfs(stack)
+    return bfs(game_state, stack)
 
-def connect():
-    global uuid
-    global game_state
-    global stack
-
+def connect(game_state: GameState | None, stack: List[Node] | None, url, uuid):
     response = requests.post(url + REGISTER, json={UUID: uuid} if uuid else {})
     resp: dict = response.json()
 
@@ -103,8 +93,10 @@ def connect():
         stack = [Node(game_state.pos.x, game_state.pos.y, Dir.N)]
     else:
         game_state.add_view(resp.get(VIEW, None))
+    
+    return game_state, uuid, stack
 
-def send_commands(commands: list) -> Dict[str, str]:
+def send_commands(url, uuid, commands: list) -> Dict[str, str]:
     commands_str = ''.join(commands)
     logger.debug(f"Sending '{commands_str}'")
     commands_json = {INPUT : commands_str, UUID: uuid}
@@ -112,10 +104,10 @@ def send_commands(commands: list) -> Dict[str, str]:
     logger.debug(f"Received {response}")
     return response.json()
 
-def run():
+def run(game_state: GameState, stack: List[Node], url, uuid):
     commands = []
     for _ in range(game_state.moves):
-        direction = bfs(stack)
+        direction = bfs(game_state, stack)
         if direction is None:
             break
         commands.append(direction)
@@ -125,7 +117,7 @@ def run():
 
     # print("Sending", commands) # TODO remove
 
-    response = send_commands(commands)
+    response = send_commands(url, uuid, commands)
 
     if END in response:
         print("X-Ray points used:", game_state.START_XRAY_POINTS - game_state.xray_points)
@@ -146,11 +138,6 @@ def run():
     game_state.new_round()
 
 def main():
-    global url
-    global game_state
-    global uuid
-    global stack
-
     parser = get_parser()
     args = parser.parse_args()
 
@@ -161,16 +148,14 @@ def main():
     if not url.startswith('http://'):
         url = 'http://' + url
 
-    uuid = game_state = stack = None
-
-    connect()
+    game_state, uuid, stack = connect(None, None, url, None)
     while True:
         # try:
-            run()
+            run(game_state, stack, url, uuid)
         # except Exception as e: # TODO
         #     logger.exception(e)
         #     # print(e, trace)
-        #     connect()
+        #     connect(game_state, stack, url, uuid)
 
 if __name__ == '__main__':
     main()
