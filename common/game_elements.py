@@ -92,7 +92,7 @@ class Map(np.ndarray):
             obj = nparr.view(cls)
             obj.entrance = Pos(*np.argwhere(obj == tiles.Entrance.code)[0])
         else:
-            size = (height if height else cls.MAX_HEIGHT, width if width else cls.MAX_WIDTH)
+            size = (int(height) if height else cls.MAX_HEIGHT, int(width) if width else cls.MAX_WIDTH)
             obj = np.ones(size, dtype=np.uint8).view(cls) # init full of ones (unknown) -- might change based on feedback
         # add the new attribute to the created instance
         if anchor is not None:
@@ -141,7 +141,6 @@ class GameState:
         pos: Pos = None,
         maps: List[Map] | None = None,
         portals: Dict[int, Tuple] | None = None,
-        anchor: Pos | None = None,
         moves: int | None = None,
         next_round_moves: int | None = None,
         xray_points: int | None = None,
@@ -151,7 +150,7 @@ class GameState:
         height: int | None = None,
         view: str | None = None,
     ) -> None:
-        self.maps = maps if maps else [Map(anchor=anchor, agent_map=agent, width=int(width), height=int(height))] # list of maps; all parts except the agent will contain only one map, the current one
+        self.maps = maps if maps else [Map(anchor=pos, agent_map=agent, width=width, height=height)] # list of maps; all parts except the agent will contain only one map, the current one
         self.current_map = self.maps[-1] # the only map actually used, except for the AI (might not get the chance to actually implement that after all)
 
         if pos is not None:
