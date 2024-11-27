@@ -66,7 +66,15 @@ class Tower(Tile):
     code = 224
 
 class Trap(Tile, ABC):
+    @property
+    @abstractmethod
+    def base_code():
+        pass
+
     def __init__(self, code: int): # must supply a code to init a `Trap` object
+        if code in list(range(1, 6)):
+            code = code + self.base_code
+
         super().__init__(code)
         self._n = (code - 1) % 5 + 1
 
@@ -75,12 +83,13 @@ class Trap(Tile, ABC):
         pass # must be implemented by inheritors
 
 class UnknownTrap(Trap):
-    code = 90
+    base_code = code = 90
 
     def visit(self, direction) -> effects.Effect:
         raise NotImplementedError("Tried visiting an UnknownTrap")
 
 class MovesTrap(Trap):
+    base_code = 95
     @property
     def moves(self):
         return self._n
@@ -89,6 +98,7 @@ class MovesTrap(Trap):
         return effects.MovesDecreaseEffect(direction, self._n)
 
 class RewindTrap(Trap):
+    base_code = 100
     @property
     def rewind_no(self):
         return self._n
@@ -97,6 +107,7 @@ class RewindTrap(Trap):
         return effects.RewindEffect(direction, self._n)
 
 class ForwardTrap(Trap):
+    base_code = 105
     @property
     def forward_no(self):
         return self._n
@@ -105,6 +116,7 @@ class ForwardTrap(Trap):
         return effects.PushForwardEffect(direction, self._n)
 
 class BackwardTrap(Trap):
+    base_code = 110
     @property
     def backward_no(self):
         return self._n

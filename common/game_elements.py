@@ -249,6 +249,7 @@ class GameState:
 
     def use_xray(self):
         if self.xray_points <= 0:
+            self.decrease_next_round_moves()
             return '0'
             raise ValueError("No X-Ray points left to use!")
         self.xray_points -= 1

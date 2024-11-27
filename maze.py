@@ -61,10 +61,16 @@ def get_parser():
         type=int,
         help="Seed to be used."
     )
+    parser.add_argument(
+        "--max-traps",
+        type=int,
+        default=0,
+        help="Max number of traps of each type."
+    )
 
     return parser
 
-def neighbors(maze: Map, cell: Pos, value: int, generate_maze: bool=False) -> List[Pos]:
+def neighbors(maze: Map, cell: Pos, value: int, search=True, generate_maze: bool=False) -> List[Pos]:
     neighbors = []
 
     # Iterates through four neighbors in the order:
@@ -77,7 +83,7 @@ def neighbors(maze: Map, cell: Pos, value: int, generate_maze: bool=False) -> Li
         n[i % 2] += ((i - i % 2) or -2) // (1 if generate_maze else 2)
 
         if n[0] < maze.shape[0] and n[1] < maze.shape[1] and n[0] > 0 and n[1] > 0:
-            if maze[n[0]][n[1]] == value:
+            if search and maze[n[0]][n[1]] == value:
                 neighbors.append(Pos(*n))
 
     return neighbors
@@ -174,7 +180,7 @@ def generate_walls(width, height):
     return maze, path_count
 
 @retry(times=3) # TODO subject to change
-def generate_maze(width, height, seed=None, max_special_tiles=1, * , retry=False):
+def generate_maze(width, height, seed=None, * , max_traps=0, retry=False):
     if not retry:
         random.seed(seed)
 
@@ -202,13 +208,36 @@ def generate_maze(width, height, seed=None, max_special_tiles=1, * , retry=False
     print("Entrance:", entrance)
     print("Exit:", exit)
 
+    for trap_type in [tiles.MovesTrap, tiles.ForwardTrap, tiles.BackwardTrap, tiles.RewindTrap]:
+        num_trap = random.randint(0, max_traps)
+        for _ in range(num_trap):
+            while True:
+                i = random.randint(0, height - 1)
+                j = random.randint(0, width - 1)
+
+                if maze[i][j] != tiles.Path.code:
+                    continue
+
+                valid = True
+                for neigh in neighbors(maze, Pos(i, j), tiles.Path.code, False):
+                    neigh = tiles.from_code(maze[neigh])
+                    if neigh != tiles.Path.code and neigh != tiles.Wall.code:
+                        valid = False
+                        break
+
+                if valid:
+                    break
+
+            trap = trap_type(random.randint(1, 5))
+            maze[i][j] = trap.code
+
     return maze
 
 def main(args=None):
     parser = get_parser()
     args = parser.parse_args(args)
 
-    maze = generate_maze(args.width, args.height, seed=args.seed)
+    maze = generate_maze(args.width, args.height, max_traps=args.max_traps, seed=args.seed)
 
     # Convert maze to image
     maze.write_to_file(args.output)
