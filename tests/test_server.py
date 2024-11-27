@@ -11,7 +11,7 @@ import agent
 URL = "http://127.0.0.1:5000"
 
 test_cases = [
-    ('test_maze.png', {
+    ('tests/test_maze.png', {
         "XXXXXXXXXX":
             {
                 "command_1": {
@@ -266,24 +266,34 @@ test_cases = [
     # }),
 ]
 
+@pytest.fixture
+def start_server():
+    server_lst: List[Popen] = []
+    def _start(maze):
+        server = Popen(['python3', 'app.py', '-m', str(maze)], stdin=None, stdout=None, stderr=None, close_fds=True)
+        sleep(1)
+        server_lst.append(server)
+        return server
+    
+    yield _start
+
+    server = server_lst[0]
+    os.kill(server.pid, signal.SIGKILL)
 
 @pytest.mark.parametrize("maze,commands", test_cases)
-def test_server(maze, commands: Dict[str, dict]):
-    server = Popen(['python3', 'app.py', '-m', 'tests/test_maze.png'], stdin=None, stdout=None, stderr=None, close_fds=True)
+def test_server(start_server, maze, commands: Dict[str, dict]):
+    server = start_server(maze)
     sleep(1)
 
     _, uuid, _ = agent.connect(None, None, URL, None)
 
-    try:
-        for comm_str, expected_resp in commands.items():
-            correct_comm_str = comm_str.upper()
+    for comm_str, expected_resp in commands.items():
+        correct_comm_str = comm_str.upper()
 
-            received_resp = agent.send_commands(URL, uuid, correct_comm_str)
+        received_resp = agent.send_commands(URL, uuid, correct_comm_str)
 
-            for key, val in expected_resp.items():
-                assert key in received_resp
-                assert val == received_resp.pop(key)
+        for key, val in expected_resp.items():
+            assert key in received_resp
+            assert val == received_resp.pop(key)
 
-            assert len(received_resp.items()) == 0
-    finally:
-        os.kill(server.pid, signal.SIGKILL)
+        assert len(received_resp.items()) == 0
