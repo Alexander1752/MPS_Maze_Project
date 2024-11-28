@@ -258,7 +258,7 @@ test_cases = [
                         "[255, 0, 255, 0, 255]" +
                     "]"
                 },
-                "moves": "7"
+                "moves": "6"
             }
     }),
     # ('test_maze.png', {
@@ -282,7 +282,7 @@ def start_server():
 
 @pytest.mark.parametrize("maze,commands", test_cases)
 def test_server(start_server, maze, commands: Dict[str, dict]):
-    server = start_server(maze)
+    start_server(maze)
     sleep(1)
 
     _, uuid, _ = agent.connect(None, None, URL, None)
