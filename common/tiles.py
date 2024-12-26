@@ -143,9 +143,10 @@ CODE_TO_TYPE[0]   = Wall
 CODE_TO_TYPE[255] = Path
 CODE_TO_TYPE[64]  = Entrance
 CODE_TO_TYPE[182] = Exit
-# CODE_TO_TYPE[16]  = Xray
-# CODE_TO_TYPE[32]  = Fog
-# CODE_TO_TYPE[224] = Tower
+
+CODE_TO_TYPE[16]  = Xray
+CODE_TO_TYPE[32]  = Fog
+CODE_TO_TYPE[224] = Tower
 
 CODE_TO_TYPE[90] = UnknownTrap
 CODE_TO_TYPE[96:101]  =  5 * [MovesTrap]

@@ -215,7 +215,7 @@ class GameState:
 
     # TODO: this will need to be changed -- ar fi bine sa dea return la vizibilitate. Pot sa fac chestia asta pe
     # pe server si asta ar trebui sa dea macar un raspuns de ok sau nu.
-    def perform_command(self, move: str): # XXX maybe consider returning here the command result, visibility around agent etc.
+    def perform_command(self, move: str, max_num_traps_redirect:int|None=None): # XXX maybe consider returning here the command result, visibility around agent etc.
         """ Applies a command on this game state """
         self.moves -= 1
         self.xray_on = 0
@@ -229,12 +229,16 @@ class GameState:
             case _:
                 raise ValueError(f'"{move}" is not a valid move')
 
-    def move(self, direction):
+    def move(self, direction, max_num_traps_redirect:int|None=None):
         """ Applies a move command on this game state (not X-Ray) """
+
+        if max_num_traps_redirect is not None and max_num_traps_redirect < 0:
+            raise ValueError("Too many trap redirects")
+
         self.pos = Dir.move(self.pos, direction) # move into the tile, even if wall (its effect will move us back where we started from)
         logging.debug(f'Moved into tile {self.current_map[self.pos.x][self.pos.y]}')
-        effect = tiles.from_code(self.current_map[self.pos.x][self.pos.y]).visit(direction)
-        if effect.activate(self) is not None:
+        effect = tiles.from_code(self.current_map[self.pos]).visit(direction)
+        if effect.activate(self, max_num_traps_redirect) is not None:
             return '0'
         return '1'
 

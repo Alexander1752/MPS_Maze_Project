@@ -231,6 +231,8 @@ def main(args=None):
 
     parser = get_parser()
     ARGS = parser.parse_args(args)
+
+    # TODO add the possibility to generate a new maze when no maze argument is provided
     print(ARGS.maze)
     MAZE = Map.load_from_file(ARGS.maze)
 

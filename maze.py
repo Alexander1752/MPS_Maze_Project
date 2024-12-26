@@ -4,10 +4,11 @@ from pathlib import Path
 import random
 from typing import List
 
-from common.game_elements import Map, Pos
+from common.game_elements import Map, Pos, GameState, Dir
 import common.tiles as tiles
 
 FIRST_PREFFERENCE = 70 # percent
+MAX_NUM_TRAPS_REDIRECT = 4
 
 def retry(times: int, first_different: bool=True):
     """
@@ -200,7 +201,15 @@ def generate_maze(width, height, seed=None, * , max_traps=0, retry=False):
     # Randomly choose entrance and exit locations with respect to the 50% rule
     entrance_idx = random.randint(0, len(loop_order) - path_count // 2 - 1)
     entrance = loop_order[entrance_idx]
-    exit = random.choice(loop_order[entrance_idx + path_count // 2:])
+    exit_idx = random.randint(entrance_idx + path_count // 2, len(loop_order) - 1)
+    exit = loop_order[exit_idx]
+    loop_order = loop_order[entrance_idx : exit_idx + 1]
+
+    path_to_sol = Map(width=width, height=height)
+    path_to_sol.fill(0)
+
+    for pos in loop_order:
+        path_to_sol[pos] = 1 # is part of the solution path
 
     maze[entrance] = tiles.Entrance.code
     maze[exit] = tiles.Exit.code
@@ -214,14 +223,25 @@ def generate_maze(width, height, seed=None, * , max_traps=0, retry=False):
             while True:
                 i = random.randint(0, height - 1)
                 j = random.randint(0, width - 1)
+                pos = Pos(i, j)
 
-                if maze[i][j] != tiles.Path.code:
+                if trap_type != tiles.MovesTrap and path_to_sol[pos]:
+                    continue
+
+                if maze[pos] != tiles.Path.code:
                     continue
 
                 valid = True
-                for neigh in neighbors(maze, Pos(i, j), tiles.Path.code, False):
-                    neigh = tiles.from_code(maze[neigh])
-                    if neigh != tiles.Path.code and neigh != tiles.Wall.code:
+                for neigh in neighbors(maze, pos, tiles.Path.code, False):
+                    if maze[neigh] != tiles.Path.code and maze[neigh] != tiles.Wall.code:
+                        valid = False
+                        break
+
+                    state = GameState(maps=[maze], pos=pos)
+
+                    try:
+                        state.perform_command(Dir.get_direction(neigh, pos), MAX_NUM_TRAPS_REDIRECT)
+                    except:
                         valid = False
                         break
 
