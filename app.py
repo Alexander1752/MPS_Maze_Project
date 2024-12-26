@@ -6,7 +6,7 @@ from typing import List, Dict
 import time
 import queue
 
-from common.game_elements import Map, GameState, Pos
+from common.game_elements import Map, GameState, Pos, serialize_view, deserialize_view
 import common.tiles as tiles
 
 
@@ -160,7 +160,7 @@ def disguise_traps(game_state: GameState):
     agent_pos = Pos(len(view) // 2, len(view) // 2)
 
     if FRIENDLY_MODE:
-        return str(view) # TODO change serialization
+        return serialize_view(view)
 
     for i in range(len(view)):
         for j in range(len(view)):
@@ -170,7 +170,7 @@ def disguise_traps(game_state: GameState):
                     # The tile is adjacent to the player pos
                     view[i][j] = tiles.UnknownTrap.code
 
-    return str(view) # TODO change serialization
+    return serialize_view(view)
 
 def check_moves(agent_uuid: str, moves: List[str]):
     """"""

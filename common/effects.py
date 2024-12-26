@@ -2,6 +2,7 @@
 from abc import ABC, abstractmethod
 
 import common.game_elements as ge
+import common.tiles as tiles
 
 class Effect(ABC):
     def __init__(self, direction) -> None:
@@ -34,15 +35,36 @@ class TrapEffect(Effect, ABC):
         self._n = n # this memorizes the strength of the effect [1-5]
 
 class MovesDecreaseEffect(TrapEffect):
+    rewind = False
+
     def activate(self, game_state: 'ge.GameState', max_num_traps_redirect:int|None=None):
-        game_state.decrease_next_round_moves(self._n)
+        game_state.decrease_next_round_moves(self._n if not self.rewind else -self._n)
 
 class XrayEffect(Effect):
     def activate(self, game_state: 'ge.GameState', max_num_traps_redirect:int|None=None):
         game_state.xray_points += 1
+        game_state.current_map[game_state.pos] = tiles.Path.code # "delete" xray tile when first stepped on
 
 class RewindEffect(TrapEffect):
-    pass # TODO implement RewindEffect
+    def activate(self, game_state: 'ge.GameState', max_num_traps_redirect:int|None=None):
+        max_num_traps_redirect = None if max_num_traps_redirect is None else max_num_traps_redirect - 1
+        MovesDecreaseEffect.rewind = True
+
+        for _ in range(self._n):
+            if len(game_state.prev_moves) == 0:
+                return
+            move = game_state.prev_moves.pop()
+
+            match move:
+                case 'X':
+                    game_state.xray_points += 1
+                case 'N' | 'S' | 'E' | 'W':
+                    game_state.move(ge.Dir.OPPOSITE[move], max_num_traps_redirect)
+                case 'P':
+                    game_state.enter_portal()
+                case _:
+                    raise ValueError(f'"{move}" is not a valid move')
+
 
 class PushForwardEffect(TrapEffect):
     def activate(self, game_state: 'ge.GameState', max_num_traps_redirect:int|None=None):

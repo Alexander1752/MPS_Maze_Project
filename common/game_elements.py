@@ -2,13 +2,13 @@
 from collections import namedtuple
 from enum import Enum
 import numpy as np
-import json
 import logging
 from PIL import Image
 from typing import List, Dict, Tuple
 
 import common.tiles as tiles
 
+MAX_NUM_PREV_MOVES = 100
 
 Pos = namedtuple("Pos", "x y")
 
@@ -86,7 +86,10 @@ class Map(np.ndarray):
         agent_map: bool = False,
         width:  int = 0,
         height: int = 0,
-        nparr: np.ndarray | None = None # harta, matrice care tine codurile de la 0-255
+        nparr: np.ndarray | None = None, # harta, matrice care tine codurile de la 0-255
+        prev_map: 'Map' | None = None,
+        prev_visited: 'Map' | None = None,
+        prev_pos: Pos | None = None,
     ):
         if nparr is not None:
             obj = nparr.view(cls)
@@ -106,6 +109,11 @@ class Map(np.ndarray):
         if len(entrance_tiles):
             obj.entrance = Pos(*entrance_tiles[0])
 
+        obj.portal2maps = {}
+        obj.prev_map = prev_map
+        obj.prev_visited = prev_visited
+        obj.prev_pos = prev_pos
+
         # return the newly created object:
         return obj
 
@@ -113,6 +121,11 @@ class Map(np.ndarray):
         if obj is None: return
         self.anchor: Pos | None = getattr(obj, 'anchor', None)
         self.entrance: Pos | None = getattr(obj, 'entrance', None)
+
+        self.portal2maps: Dict[Pos, Tuple[Map, Map]] = getattr(obj, 'portal2map', {})
+        self.prev_map: Map = getattr(obj, 'prev_map', None)
+        self.prev_visited: Map = getattr(obj, 'prev_visited', None)
+        self.prev_pos: Map = getattr(obj, 'prev_pos', None)
 
     def in_map(self, *args):
         if len(args) == 1:
@@ -125,6 +138,28 @@ class Map(np.ndarray):
     def write_to_file(self, path):
         img = Image.fromarray(self, mode="L")  # "L" mode is for 8-bit grayscale
         img.save(path)
+
+    @property
+    def portals(self):
+        portals_pos = list(np.argwhere((self >= 150) & (self <= 169)))
+
+        portal_codes: Dict[int, List[Pos]] = {}
+        for portal in portals_pos:
+            portal = Pos(portal[0], portal[1])
+            if self[portal] not in portal_codes:
+                portal_codes[self[portal]] = [portal]
+            else:
+                portal_codes[self[portal]].append(portal)
+
+        portals_dict: Dict[Pos, Pos] = {}
+        for portal_pair in portal_codes.values():
+            if len(portal_pair) < 2:
+                portals_dict[portal_pair[0]] = None
+            else:
+                portals_dict[portal_pair[0]] = portal_pair[1]
+                portals_dict[portal_pair[1]] = portal_pair[0]
+
+        return portals_dict
 
     @classmethod
     def load_from_file(cls, path):
@@ -181,13 +216,15 @@ class GameState:
         self._visibility = visibility
         self.xray_on = 0
 
+        self.prev_moves = [] # list of previous moves
+
         self.add_view(view)
 
     def add_view(self, view: str):
         if not view:
             return
 
-        view: List[List[int]] = json.loads(view) # TODO change deserialization
+        view: List[List[int]] = deserialize_view(view)
         visibility = len(view) // 2
         view_i = 0
         view_j = 0
@@ -219,12 +256,17 @@ class GameState:
         """ Applies a command on this game state """
         self.moves -= 1
         self.xray_on = 0
+        self.prev_moves.append(move)
+        self.prev_moves = self.prev_moves[-MAX_NUM_PREV_MOVES:] # limit to 100 prev moves
         match move:
             case 'X': # TODO support greater size xray
                 return self.use_xray()
             case 'N' | 'S' | 'E' | 'W':
                 return self.move(move)
+            case 'P':
+                return self.enter_portal()
             case '': # empty command
+                self.prev_moves.pop() # remove empty command if it was just added
                 return
             case _:
                 raise ValueError(f'"{move}" is not a valid move')
@@ -241,6 +283,34 @@ class GameState:
         if effect.activate(self, max_num_traps_redirect) is not None:
             return '0'
         return '1'
+
+    def enter_portal(self):
+        if tiles.CODE_TO_TYPE[self.current_map[self.pos]] != tiles.Portal:
+            self.decrease_next_round_moves()
+            return '0' # failure
+
+        if self.agent:
+            if self.current_map.anchor == self.pos: # going back in the origin portal
+                self.pos = self.current_map.prev_pos
+                self.visited = self.current_map.prev_visited
+                self.current_map = self.current_map.prev_map
+            else:
+                if self.pos not in self.current_map.portal2maps:
+                    new_map = Map(agent_map=True, prev_map=self.current_map, prev_visited=self.visited, prev_pos=self.pos)
+                    new_map[new_map.anchor] = self.current_map[self.pos]
+
+                    new_visited = new_map.copy()
+                    new_visited.fill(State.VISITED)
+
+                    self.current_map.portal2maps[self.pos] = (new_map, new_visited)
+
+                self.current_map, self.visited = self.current_map.portal2maps[self.pos]
+                self.pos = self.current_map.anchor
+        else: # server
+            pair = self.current_map.portals[self.pos]
+            self.pos = pair
+
+        return '1' # success
 
     def decrease_next_round_moves(self, amount: int = 1):
         self.next_round_moves -= amount
@@ -298,3 +368,14 @@ class GameState:
 
         return current_visibility
 
+def serialize_view(view: List[List[int]]) -> str:
+    return '[' + "; ".join([", ".join([str(i) for i in row]) for row in view]) + ']'
+
+def deserialize_view(view: str) -> List[List[int]]:
+    chars = "[],; "
+    view = view.strip(chars)
+
+    view_str = [row.strip(chars).split(",") for row in view.split(";")]
+    view_int = [[int(s.strip(chars)) for s in row] for row in view_str]
+
+    return view_int
