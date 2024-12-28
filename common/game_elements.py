@@ -4,7 +4,7 @@ from enum import Enum
 import numpy as np
 import logging
 from PIL import Image
-from typing import List, Dict, Tuple
+from typing import List, Dict, Tuple, Union
 
 import common.tiles as tiles
 
@@ -87,8 +87,8 @@ class Map(np.ndarray):
         width:  int = 0,
         height: int = 0,
         nparr: np.ndarray | None = None, # harta, matrice care tine codurile de la 0-255
-        prev_map: 'Map' | None = None,
-        prev_visited: 'Map' | None = None,
+        prev_map: Union['Map', None] = None,
+        prev_visited: Union['Map', None] = None,
         prev_pos: Pos | None = None,
     ):
         if nparr is not None:
