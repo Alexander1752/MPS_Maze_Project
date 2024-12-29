@@ -4,7 +4,7 @@ from tkinter import Canvas
 from PIL import Image, ImageTk
 import requests
 import threading
-from sseclient import SSEClient
+from sseclient_local import SSEClient
 
 from typing import List, Tuple
 
