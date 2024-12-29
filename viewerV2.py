@@ -4,14 +4,24 @@ from tkinter import Canvas
 from PIL import Image, ImageTk
 import requests
 import threading
-import time
 from sseclient import SSEClient
 
 from typing import List, Tuple
 
+from common.game_elements import Map
+import common.tiles as tiles
+
 PIXELS_PER_SQUARE = 5
 PAN_SPEED = 0.05
-PATH_COLOR = (0, 0, 255)
+REFRESH_INTERVAL = 200 # ms
+
+IMG_LAYER = 0
+PATH_LAYER = 1
+TRAP_LAYER = 2
+
+PATH_COLOR = (127, 121, 0)
+AGENT_COLOR = (255, 242, 0)
+TRAP_VALUE_COLOR = (0, 0, 0)
 
 POSITION_TO_ARROW = {
     'N': 'Up',
@@ -30,23 +40,29 @@ def get_character_position():
 
     maze_file = str(character_pos_response.json()['maze_file'])
 
-    app.load_base_image(maze_file)
-    app.draw_path(app.character_position[0], app.character_position[1], (255, 33, 44))
+    # Maze layer
+    app.load_maze(maze_file)
+
+    # Paths + agent layer
+    app.new_layer()
+    app.draw_path(app.character_position[0], app.character_position[1], AGENT_COLOR)
+    app.draw_path(app.maze.exit.y, app.maze.exit.x, (0, 255, 0))
+
+    # Traps layer
+    app.draw_traps()
 
 def listen_to_server():
     server_url = "http://127.0.0.1:5000/events"
-    response = requests.get(server_url, stream=True)
+    events = SSEClient(server_url)
 
-    client = SSEClient(response)
-
-    for event in client.events():
-        app.move_character(POSITION_TO_ARROW[str(event.data)])
+    for event in events:
+        app.move_character(*event.data.split(','))
         print(f"Received event: {event.event}, data: {event.data}")
 
-class ImageOverlayApp:
+class ViewerApp:
     def __init__(self, root: tk.Tk):
         self.root = root
-        self.root.title("Image Overlay Viewer")
+        self.root.title("Viewer")
 
         # Initialize canvas and scrollbars
         self.canvas = Canvas(self.root, bg="black")
@@ -80,6 +96,8 @@ class ImageOverlayApp:
 
         # Bind events
         self.root.bind("<MouseWheel>",  self.zoom)
+        self.canvas.bind('<Button-4>',  self.zoom)
+        self.canvas.bind('<Button-5>',  self.zoom)
         self.root.bind("<Button-1>",    self.start_pan)
         self.root.bind("<B1-Motion>",   self.pan)
         self.root.bind("<KP_Add>",      self.zoom_in)
@@ -102,19 +120,21 @@ class ImageOverlayApp:
         self.pan_start_y = 0
 
         self.character_position = [0, 0]
+        self.maze = None
 
-    def load_base_image(self, image_path):
-        base_image = Image.open(image_path)
-        base_image = base_image.resize((base_image.width * PIXELS_PER_SQUARE, base_image.height * PIXELS_PER_SQUARE), resample=Image.Resampling.NEAREST).convert("RGBA")
+    def load_maze(self, image_path):
+        self.maze = Map.load_from_file(image_path)
 
-        self.images.append(base_image)
+        color_maze = self.maze.to_color_image()
+        color_maze = color_maze.resize((color_maze.width * PIXELS_PER_SQUARE, color_maze.height * PIXELS_PER_SQUARE), resample=Image.Resampling.NEAREST).convert("RGBA")
+        self.images.append(color_maze)
         self.modified.append(True)
 
-        self.pixels.append(base_image.load())
+        self.pixels.append(color_maze.load())
 
-        self.update_images()
+        self.update_images(rescale=False, auto_refresh=True)
 
-    def update_images(self, rescale=False):
+    def update_images(self, rescale=False, auto_refresh=False):
         # Resize images
         if not self.images:
             return
@@ -141,14 +161,19 @@ class ImageOverlayApp:
             # Update scroll region
             self.canvas.config(scrollregion=(0, 0, resized_composite.width, resized_composite.height))
 
+        if auto_refresh:
+            self.root.after(REFRESH_INTERVAL, app.update_images, False, True)
+
     def zoom(self, event):
         # Adjust scale
+        num = 0
         if not isinstance(event, (int, float)):
+            num = event.num
             event = event.delta
 
-        if event > 0:
+        if event > 0 or num == 4:
             self.scale *= 1.1
-        elif event < 0:
+        elif event < 0 or num == 5:
             self.scale /= 1.1
 
         self.update_images(rescale=True)
@@ -184,60 +209,60 @@ class ImageOverlayApp:
             self.canvas.xview_scroll(1, "units")
         
     # Function to handle arrow key movements
-    def move_character(self, position):
-        if position == 'Up':
-            self.character_position[1] -= 1
-        elif position == 'Down':
-            self.character_position[1] += 1
-        elif position == 'Left':
-            self.character_position[0] -= 1
-        elif position == 'Right':
-            self.character_position[0] += 1
-        
-        # Update the character's position on the canvas
-        new_x = int(self.character_position[0] * self.scale)
-        new_y = int(self.character_position[1] * self.scale)
-        # self.canvas.coords(character, new_x, new_y) TODO move character
-
+    def move_character(self, x_or_pos, y=None):
         # Draw the path by coloring a rectangle at the current position
         self.draw_path(self.character_position[0], self.character_position[1])
+        if y == None:
+            position = x_or_pos
+            if position == 'Up':
+                self.character_position[1] -= 1
+            elif position == 'Down':
+                self.character_position[1] += 1
+            elif position == 'Left':
+                self.character_position[0] -= 1
+            elif position == 'Right':
+                self.character_position[0] += 1
+        else:
+            self.character_position[1] = int(x_or_pos)
+            self.character_position[0] = int(y)
+
+        # TODO replace with agent image
+        self.draw_path(self.character_position[0], self.character_position[1], color=AGENT_COLOR)
+
+    def new_layer(self):
+        # Create fully transparent image
+        new_img = Image.new("RGBA", (self.images[0].width, self.images[0].height), (0, 0, 0, 0))
+        self.images.append(new_img)
+        self.pixels.append(new_img.load())
+        self.modified.append(True)
 
     # Function to draw the path
     def draw_path(self, x, y, color=PATH_COLOR):
         for i in range(PIXELS_PER_SQUARE - 2):
             for j in range(PIXELS_PER_SQUARE - 2):
-                self.draw_pixel(1, x * PIXELS_PER_SQUARE + 1 + i, y * PIXELS_PER_SQUARE + 1 + j, color)
+                self.draw_pixel(PATH_LAYER, x * PIXELS_PER_SQUARE + 1 + i, y * PIXELS_PER_SQUARE + 1 + j, color)
 
-        self.update_images()
-
-    def draw_pixel(self, layer: int, x: int, y: int, color: Tuple[int, int, int], update=False):
-        if len(self.images) - 1 < layer:
-            # Create fully transparent image
-            new_img = Image.new("RGBA", (self.images[0].width, self.images[0].height), (0, 0, 0, 0))
-            self.images.append(new_img)
-            self.pixels.append(new_img.load())
-            self.modified.append(True)
-
+    def draw_pixel(self, layer: int, x: int, y: int, color: Tuple[int, int, int]):
         self.pixels[layer][x, y] = color
-        
         self.modified[layer] = True
+    
+    def draw_trap_value(self, x: int, y: int, value: int, color=TRAP_VALUE_COLOR):
+        points = [(1, 1), (3, 1), (1, 3), (3, 3), (2, 2)]
+        for i, j in points[:value]:
+            self.draw_pixel(TRAP_LAYER, x * PIXELS_PER_SQUARE + i, y * PIXELS_PER_SQUARE + j, color)
 
-        if update:
-            self.update_images()
+    def draw_traps(self):
+        traps = self.maze.traps
+        if len(traps) == 0:
+            return
 
-    # def draw_square(self, layer: int, x: int, y: int)
-
-def change_pixel():
-    colors = [(255,0,0), (0,255,0), (0,0,255),(255,255,0),(255,0,255),(0,255,255)]
-    while True:
-        time.sleep(1)
-        app.draw_pixel(1, 0, 1, colors[0], update=True)
-
-        colors.insert(0, colors.pop())
+        self.new_layer()
+        for (x, y) in traps:
+            self.draw_trap_value(y, x, tiles.from_code(self.maze[x, y]).n)
 
 if __name__ == "__main__":
     root = tk.Tk()
-    app = ImageOverlayApp(root)
+    app = ViewerApp(root)
 
     get_character_position()
 

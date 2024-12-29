@@ -185,9 +185,11 @@ def check_moves(agent_uuid: str, moves: List[str]):
         command_result = AGENTS[agent_uuid].perform_command(move)
         response[command_no][COMMAND_RESULT_FIELD] = str(1 if command_result is None else command_result)
 
-        # check if the command
-        if command_result == '1' and move in ['N', 'S', 'E', 'W']:
-            EVENT_QUEUE.put(move)
+        # # check if the command
+        # if command_result == '1' and move in ['N', 'S', 'E', 'W']:
+        #     EVENT_QUEUE.put(move)
+
+        EVENT_QUEUE.put(AGENTS[agent_uuid].pos)
 
         # Check if after the previous move, the agent reached the exit
         agent_pos = AGENTS[agent_uuid].pos
@@ -217,9 +219,9 @@ def initial_data():
 
 def generate_events():
     while True:
-        valid_move = EVENT_QUEUE.get()
-        time.sleep(1)
-        yield f"data: {valid_move}\n\n"
+        pos: Pos = EVENT_QUEUE.get()
+        time.sleep(0.1)
+        yield f"data: {pos.x},{pos.y}\n\n"
 
 @server.route('/events')
 def stream():

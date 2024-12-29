@@ -109,6 +109,10 @@ class Map(np.ndarray):
         if len(entrance_tiles):
             obj.entrance = Pos(*entrance_tiles[0])
 
+        exit_tiles = list(np.argwhere(obj == tiles.Exit.code))
+        if len(exit_tiles):
+            obj.exit = Pos(*exit_tiles[0])
+
         obj.portal2maps = {}
         obj.prev_map = prev_map
         obj.prev_visited = prev_visited
@@ -119,8 +123,9 @@ class Map(np.ndarray):
 
     def __array_finalize__(self, obj):
         if obj is None: return
-        self.anchor: Pos | None = getattr(obj, 'anchor', None)
+        self.anchor:   Pos | None = getattr(obj, 'anchor', None)
         self.entrance: Pos | None = getattr(obj, 'entrance', None)
+        self.exit:     Pos | None = getattr(obj, 'exit', None)
 
         self.portal2maps: Dict[Pos, Tuple[Map, Map]] = getattr(obj, 'portal2map', {})
         self.prev_map: Map = getattr(obj, 'prev_map', None)
@@ -138,6 +143,10 @@ class Map(np.ndarray):
     def write_to_file(self, path):
         img = Image.fromarray(self, mode="L")  # "L" mode is for 8-bit grayscale
         img.save(path)
+
+    @property
+    def traps(self):
+        return list(map(lambda l: Pos(l[0], l[1]), np.argwhere((self >= 96) & (self < 116))))
 
     @property
     def portals(self):
@@ -161,11 +170,23 @@ class Map(np.ndarray):
 
         return portals_dict
 
+    def to_color_image(self):
+        rgb = np.zeros((*self.shape, 3), dtype=np.uint8)
+
+        for code, type in enumerate(tiles.CODE_TO_TYPE):
+            if type:
+                rgb[self == code] = type.color
+
+        return Image.fromarray(rgb).convert("RGBA")
+
     @classmethod
     def load_from_file(cls, path):
-        img = Image.open(path).convert("L")  # Ensure it's in grayscale mode ("L")
-        return cls(nparr=np.array(img, dtype=np.uint8))
+        return cls.load_from_image(Image.open(path))
 
+    @classmethod
+    def load_from_image(cls, img: Image.Image):
+        img = img.convert("L") # Ensure it's in grayscale mode ("L")
+        return cls(nparr=np.array(img, dtype=np.uint8))
 
 class GameState:
     MAX_MOVES_PER_TURN = 10

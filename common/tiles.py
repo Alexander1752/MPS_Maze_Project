@@ -15,6 +15,11 @@ def from_code(code: int) -> 'Tile':
     return entity_type(code)
 
 class Tile:
+    @property
+    @abstractmethod
+    def color():
+        pass
+
     def __init__(self, code: int | None = None):
         # Checks if the code received is the same as the one expected
         if code is not None:
@@ -34,36 +39,45 @@ class Tile:
 class UnknownTile(Tile):
     """ Not defined in the game specs, proposed value for a tile not known by an agent """
     code = 1
+    color = (0, 0, 0) # placeholder
 
     def visit(self, direction) -> effects.Effect:
         raise NotImplementedError("Tried visiting an UnknownTile")
 
 class Wall(Tile):
     code = 0
+    color = (0, 0, 0)
+
     def visit(self, direction) -> effects.Effect:
         return effects.WallEffect(direction)
 
 class Path(Tile):
     code = 255 # nothing special to do compared to a base Entity, no other methods
+    color = (255, 255, 255)
 
 class Entrance(Tile):
     code = 64
+    color = (40, 90, 43)
 
 class Exit(Tile):
     code = 182
+    color = (80, 180, 86)
     def visit(self, direction) -> effects.Effect:
         return effects.NoEffect(direction) # TODO maybe change later
 
 class Xray(Tile):
     code = 16
+    color = (255, 128, 128)
     def visit(self, direction) -> effects.Effect:
         return effects.XrayEffect(direction)
 
 class Fog(Tile):
     code = 32
+    color = (128, 128, 128)
 
 class Tower(Tile):
     code = 224
+    color = (0, 255, 255)
 
 class Trap(Tile, ABC):
     @property
@@ -78,18 +92,24 @@ class Trap(Tile, ABC):
         super().__init__(code)
         self._n = (code - 1) % 5 + 1
 
+    @property
+    def n(self):
+        return self._n
+
     @abstractmethod
     def visit(self, direction) -> effects.Effect:
         pass # must be implemented by inheritors
 
 class UnknownTrap(Trap):
     base_code = code = 90
+    color = (32, 32, 32)
 
     def visit(self, direction) -> effects.Effect:
         raise NotImplementedError("Tried visiting an UnknownTrap")
 
 class MovesTrap(Trap):
     base_code = 95
+    color = (255, 0, 255)
     @property
     def moves(self):
         return self._n
@@ -99,6 +119,7 @@ class MovesTrap(Trap):
 
 class RewindTrap(Trap):
     base_code = 100
+    color = (255, 0, 0)
     @property
     def rewind_no(self):
         return self._n
@@ -108,6 +129,7 @@ class RewindTrap(Trap):
 
 class ForwardTrap(Trap):
     base_code = 105
+    color = (9, 255, 20)
     @property
     def forward_no(self):
         return self._n
@@ -117,6 +139,7 @@ class ForwardTrap(Trap):
 
 class BackwardTrap(Trap):
     base_code = 110
+    color = (0, 0, 255)
     @property
     def backward_no(self):
         return self._n
@@ -125,6 +148,7 @@ class BackwardTrap(Trap):
         return effects.PushBackwardEffect(direction, self._n)
 
 class Portal(Tile):
+    color = (54, 192, 241)
     def __init__(self, code: int, pair: Union['Portal', None] = None):
         super().__init__(code)
         self._pair = pair
