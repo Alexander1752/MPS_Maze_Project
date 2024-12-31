@@ -1,7 +1,7 @@
 from functools import reduce
 import tkinter as tk
 from tkinter import Canvas
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk, ImageDraw
 import requests
 import threading
 import zmq
@@ -25,6 +25,8 @@ TRAP_LAYER = 2
 PATH_COLOR = (127, 121, 0)
 AGENT_COLOR = (255, 242, 0)
 TRAP_VALUE_COLOR = (0, 0, 0)
+TRANSPARENT = (0, 0, 0, 0)
+OPAQUE_BLACK = (0, 0, 0, 255)
 
 POSITION_TO_ARROW = {
     'N': 'Up',
@@ -94,7 +96,7 @@ class ViewerApp:
         # Variables for images
         self.images: List[Image.ImageFile.ImageFile] = []
         self.modified: List[bool] = []
-        self.pixels = []
+        self.pixels: List[ImageDraw.ImageDraw] = []
 
         self.character_image = Image.open("character_model.png").convert("RGBA")
         self.character_tk_img = None
@@ -142,7 +144,7 @@ class ViewerApp:
         self.images.append(color_maze)
         self.modified.append(True)
 
-        self.pixels.append(color_maze.load())
+        self.pixels.append(ImageDraw.Draw(color_maze))
 
         self.update_images(rescale=False, auto_refresh=True)
 
@@ -241,36 +243,37 @@ class ViewerApp:
         # TODO replace with agent image
         self.draw_path(self.character_position[0], self.character_position[1], color=AGENT_COLOR)
 
-    def new_layer(self):
+    def new_layer(self, color=TRANSPARENT):
         # Create fully transparent image
-        new_img = Image.new("RGBA", (self.images[0].width, self.images[0].height), (0, 0, 0, 0))
+        new_img = Image.new("RGBA", (self.images[0].width, self.images[0].height), color)
         self.images.append(new_img)
-        self.pixels.append(new_img.load())
+        self.pixels.append(ImageDraw.Draw(new_img))
         self.modified.append(True)
 
     # Function to draw the path
     def draw_path(self, x, y, color=PATH_COLOR):
-        for i in range(PIXELS_PER_SQUARE - 2):
-            for j in range(PIXELS_PER_SQUARE - 2):
-                self.draw_pixel(PATH_LAYER, x * PIXELS_PER_SQUARE + 1 + i, y * PIXELS_PER_SQUARE + 1 + j, color)
+        self.pixels[PATH_LAYER].rectangle([
+            (x * PIXELS_PER_SQUARE + 1, y * PIXELS_PER_SQUARE + 1),
+            ((x + 1) * PIXELS_PER_SQUARE - 2, (y + 1) * PIXELS_PER_SQUARE - 2),
+        ], color)
 
-    def draw_pixel(self, layer: int, x: int, y: int, color: Tuple[int, int, int]):
-        self.pixels[layer][x, y] = color
-        self.modified[layer] = True
-    
-    def draw_trap_value(self, x: int, y: int, value: int, color=TRAP_VALUE_COLOR):
-        points = [(1, 1), (3, 1), (1, 3), (3, 3), (2, 2)]
-        for i, j in points[:value]:
-            self.draw_pixel(TRAP_LAYER, x * PIXELS_PER_SQUARE + i, y * PIXELS_PER_SQUARE + j, color)
+        self.modified[PATH_LAYER] = True
 
     def draw_traps(self):
         traps = self.maze.traps
         if len(traps) == 0:
             return
 
+        coords = [(1, 1), (3, 1), (1, 3), (3, 3), (2, 2)]
+        points = []
+
         self.new_layer()
-        for (x, y) in traps:
-            self.draw_trap_value(y, x, tiles.from_code(self.maze[x, y]).n)
+        for (y, x) in traps:
+            n = tiles.from_code(self.maze[y, x]).n
+            points.extend([(x * PIXELS_PER_SQUARE + i, y * PIXELS_PER_SQUARE + j) for i, j in coords[:n]])
+
+        self.pixels[TRAP_LAYER].point(points, TRAP_VALUE_COLOR)
+        self.modified[TRAP_LAYER] = True
 
 main_root = None
 
