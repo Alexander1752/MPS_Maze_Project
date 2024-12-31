@@ -4,11 +4,14 @@ from flask import Flask, Response, request, jsonify
 from pathlib import Path
 from typing import List, Dict
 import time
+import threading
+import viewerV2
+import maze
 import queue
+import random
 
 from common.game_elements import Map, GameState, Pos, serialize_view, deserialize_view
 import common.tiles as tiles
-
 
 def get_parser():
     # Create the argument parser
@@ -18,7 +21,6 @@ def get_parser():
     parser.add_argument(
         "--maze", "-m",
         type=Path,
-        required=True,
         help="Path of the maze to be loaded."
     )
 
@@ -31,13 +33,16 @@ COMMAND_NAME_FIELD = 'name'
 COMMAND_RESULT_FIELD = 'successful'
 VIEW_FIELD = 'view'
 MOVES_FIELD = 'moves'
-UUID_CURRENT = 0 # TODO change to a more suitable, random UUID scheme
+UUID_CURRENT_COUNTER = 0 # TODO change to a more suitable, random UUID scheme
 AGENTS : Dict[str, GameState] = {} # dict to identify agents using uuid
+AGENT_VIEWER: Dict[str, viewerV2.ViewerApp] = {}
 AGENTS_TIME : Dict[str, float] = {} # dict to identify the agent and the connection time
 FRIENDLY_MODE = False
 MAZE = None
 ARGS = None
 EVENT_QUEUE = queue.Queue()
+
+EVENT_QUEUES : Dict[str, queue.Queue]= {}
 
 # Maximum time allowed for a client in seconds. It will take in account the time of
 # the client's first request until a request that comes after this value.
@@ -49,35 +54,49 @@ MAX_TIME_ALLOWED = int(300)
 # of to initiate sockets which work differently from the @server.route.
 CLIENT_GAME_STATE = None
 
+DEFAULT_MAZE_HEIGHT = 50
+DEFAULT_MAZE_WIDTH  = 40
+DEFAULT_NOF_TRAPS = 0
+DEFAULT_SEED = None
+
 @server.route('/api/register_agent', methods=['POST'])
 def register_agent():
-    global UUID_CURRENT
+    global UUID_CURRENT_COUNTER
     global MAZE
     global FRIENDLY_MODE
 
     if request.is_json:
         if not request.get_json(): # Request is empty
-            UUID_CURRENT += 1
+            UUID_CURRENT_COUNTER += 1
             # Suppose we have maximum number of next_round_moves available
-            AGENTS[str(UUID_CURRENT)] = GameState(maps=[MAZE], moves=10, next_round_moves=10, xray_points=10)
+            if ARGS.maze is None:
+                m = maze.generate_maze(random.randint(20,60), random.randint(20,60))
+                m.write_to_file("temp.png")
+                MAZE = Map.load_from_file("temp.png")
+                
+            AGENTS[str(UUID_CURRENT_COUNTER)] = GameState(maps=[MAZE], moves=10, next_round_moves=10, xray_points=10)
 
+
+            EVENT_QUEUES[str(UUID_CURRENT_COUNTER)] = queue.Queue()
+            threading.Thread(target=viewerV2.create_viewer).start()
+            
             # Register the first time the client contacted the server
-            AGENTS_TIME[str(UUID_CURRENT)] = int(time.time())
+            AGENTS_TIME[str(UUID_CURRENT_COUNTER)] = int(time.time())
             
             if FRIENDLY_MODE:
                 return jsonify(create_friendly_response()), 200
             else:
-                return jsonify({'UUID': str(UUID_CURRENT)}), 200
+                return jsonify({'UUID': str(UUID_CURRENT_COUNTER)}), 200
 
     return jsonify({}), 400
 
 def create_friendly_response():
     global MAZE
-    global UUID_CURRENT
+    global UUID_CURRENT_COUNTER
     global AGENTS
 
     response = {
-        'UUID': str(UUID_CURRENT),
+        'UUID': str(UUID_CURRENT_COUNTER),
         'x': '',
         'y': '',
         'width': '',
@@ -85,7 +104,7 @@ def create_friendly_response():
         'view': '',
         'moves': '10' # default number of moves
     }
-    current_game_state = AGENTS[str(UUID_CURRENT)]
+    current_game_state = AGENTS[str(UUID_CURRENT_COUNTER)]
 
     response['x'] = str(int(current_game_state.pos.x))
     response['y'] = str(int(current_game_state.pos.y))
@@ -106,9 +125,13 @@ def receive_client_moves():
         This method will receive the moves from the agent, parse the JSON
         and create an array with the moves.
     """
+    global UUID_CURRENT_WORKER
+
     if request.is_json:
-        print(request.remote_addr)
+        # print(request.remote_addr)
         agent_uuid = request.get_json()['UUID']
+
+        # print("Am primit de la agentul asta: " + agent_uuid)
 
         if time.time() - AGENTS_TIME[agent_uuid] > MAX_TIME_ALLOWED:
             # TODO: when a client gets over the allowed time limit, maybe remove the UUID and reset the connection
@@ -185,11 +208,7 @@ def check_moves(agent_uuid: str, moves: List[str]):
         command_result = AGENTS[agent_uuid].perform_command(move)
         response[command_no][COMMAND_RESULT_FIELD] = str(1 if command_result is None else command_result)
 
-        # # check if the command
-        # if command_result == '1' and move in ['N', 'S', 'E', 'W']:
-        #     EVENT_QUEUE.put(move)
-
-        EVENT_QUEUE.put(AGENTS[agent_uuid].pos)
+        EVENT_QUEUES[agent_uuid].put(AGENTS[agent_uuid].pos)
 
         # Check if after the previous move, the agent reached the exit
         agent_pos = AGENTS[agent_uuid].pos
@@ -211,21 +230,27 @@ def check_moves(agent_uuid: str, moves: List[str]):
 def initial_data():
     response = {}
 
+    response["agent_uuid"] = str(UUID_CURRENT_COUNTER)
     response["entrance_x"] = str(MAZE.entrance[0])
     response["entrance_y"] = str(MAZE.entrance[1])
-    response["maze_file"] = str(ARGS.maze)
+
+    if ARGS.maze is not None:
+        response["maze_file"] = str(ARGS.maze)
+    else:
+        response["maze_file"] = str("temp.png")
 
     return jsonify(response)
 
-def generate_events():
+def generate_events(agent_uuid):
     while True:
-        pos: Pos = EVENT_QUEUE.get()
-        time.sleep(0.1)
-        yield f"data: {pos.x},{pos.y}\n\n"
+        if agent_uuid in EVENT_QUEUES.keys():
+            pos: Pos = EVENT_QUEUES[agent_uuid].get()
+            time.sleep(0.1)
+            yield f"data: {pos.x},{pos.y}\n\n"
 
-@server.route('/events')
-def stream():
-    return Response(generate_events(), content_type='text/event-stream')
+@server.route('/events/<agent_uuid>')
+def stream(agent_uuid):
+    return Response(generate_events(agent_uuid), content_type='text/event-stream')
 
 def main(args=None):
     global ARGS
@@ -234,9 +259,8 @@ def main(args=None):
     parser = get_parser()
     ARGS = parser.parse_args(args)
 
-    # TODO add the possibility to generate a new maze when no maze argument is provided
-    print(ARGS.maze)
-    MAZE = Map.load_from_file(ARGS.maze)
+    if ARGS.maze is not None:
+        MAZE = Map.load_from_file(ARGS.maze)
 
     server.run(debug=True, threaded=True) # TODO add port arg
 

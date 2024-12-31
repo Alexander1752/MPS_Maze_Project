@@ -5,3 +5,5 @@ requests
 sseclient
 keyboard
 pytest
+pyzmq
+pynput

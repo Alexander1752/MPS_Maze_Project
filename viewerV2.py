@@ -4,7 +4,10 @@ from tkinter import Canvas
 from PIL import Image, ImageTk
 import requests
 import threading
+import zmq
+from pynput import keyboard
 from sseclient_local import SSEClient
+
 
 from typing import List, Tuple
 
@@ -30,15 +33,21 @@ POSITION_TO_ARROW = {
     'W': 'Left'
 }
 
-def get_character_position():
+AGENT_UUID = ''
+
+
+def get_character_position(app):
+    global AGENT_UUID
+
     character_pos_response = requests.get('http://127.0.0.1:5000/character_position')
-    print(character_pos_response.json())
+    # print(character_pos_response.json())
 
     # Invert positions, not sure why
     app.character_position[0] = int(character_pos_response.json()['entrance_y'])
     app.character_position[1] = int(character_pos_response.json()['entrance_x'])
 
     maze_file = str(character_pos_response.json()['maze_file'])
+    AGENT_UUID = str(character_pos_response.json()['agent_uuid'])
 
     # Maze layer
     app.load_maze(maze_file)
@@ -51,13 +60,16 @@ def get_character_position():
     # Traps layer
     app.draw_traps()
 
-def listen_to_server():
-    server_url = "http://127.0.0.1:5000/events"
+def listen_to_server(app):
+    # print(app)
+
+    server_url = f"http://127.0.0.1:5000/events/{AGENT_UUID}"
+
     events = SSEClient(server_url)
 
     for event in events:
         app.move_character(*event.data.split(','))
-        print(f"Received event: {event.event}, data: {event.data}")
+        # print(f"Received event: {event.event}, data: {event.data}") TODO: uncomment
 
 class ViewerApp:
     def __init__(self, root: tk.Tk):
@@ -162,7 +174,7 @@ class ViewerApp:
             self.canvas.config(scrollregion=(0, 0, resized_composite.width, resized_composite.height))
 
         if auto_refresh:
-            self.root.after(REFRESH_INTERVAL, app.update_images, False, True)
+            self.root.after(REFRESH_INTERVAL, self.update_images, False, True)
 
     def zoom(self, event):
         # Adjust scale
@@ -260,12 +272,22 @@ class ViewerApp:
         for (x, y) in traps:
             self.draw_trap_value(y, x, tiles.from_code(self.maze[x, y]).n)
 
-if __name__ == "__main__":
-    root = tk.Tk()
+main_root = None
+
+def create_viewer():
+    global main_root
+
+    if main_root is None:
+        main_root = tk.Tk()
+        # Hides tk window
+        main_root.withdraw()
+
+    # Create a new Toplevel window for the viewer
+    root = tk.Toplevel(main_root)
     app = ViewerApp(root)
+    get_character_position(app)
 
-    get_character_position()
-
-    threading.Thread(target=listen_to_server, daemon=True).start()
+    threading.Thread(target=listen_to_server, args=(app,), daemon=True).start()
 
     root.mainloop()
+# if __name__ == "__main__":

@@ -4,6 +4,8 @@ from collections import namedtuple
 import logging
 from typing import List, Dict
 import requests
+import zmq
+import threading
 
 from common.game_elements import Map, Pos, GameState, Dir, State
 import common.tiles as tiles
@@ -28,7 +30,12 @@ INPUT = 'input'
 COMMAND = 'command_'
 END = 'end'
 
+AWAIT_FOR_INPUT = ''
+
 Node = namedtuple("Node", "x y dir")
+
+# This event will trigger when a 'Enter' is pressed in viewer
+key_event = threading.Event()
 
 def get_parser():
     # Create the argument parser
@@ -43,6 +50,11 @@ def get_parser():
         "port",
         nargs='?',
         help="The port of the game server to connect to"
+    )
+    parser.add_argument(
+        "wait_for_input",
+        nargs="?",
+        help="Client needs to wait for user input in order to move (Yes/ No)"
     )
 
     return parser
@@ -101,6 +113,7 @@ def send_commands(url, uuid, commands: list) -> Dict[str, str]:
     logger.debug(f"Sending '{commands_str}'")
     commands_json = {INPUT : commands_str, UUID: uuid}
     response = requests.post(url + SEND_MOVES, json=commands_json)
+
     logger.debug(f"Received {response}")
     return response.json()
 
@@ -138,6 +151,8 @@ def run(game_state: GameState, stack: List[Node], url, uuid):
     game_state.new_round()
 
 def main(args=None):
+    global AWAIT_FOR_INPUT
+
     parser = get_parser()
     args = parser.parse_args(args)
 
@@ -148,7 +163,11 @@ def main(args=None):
     if not url.startswith('http://'):
         url = 'http://' + url
 
+    AWAIT_FOR_INPUT = args.wait_for_input
+    print(AWAIT_FOR_INPUT)
+
     game_state, uuid, stack = connect(None, None, url, None)
+
     while True:
         # try:
             run(game_state, stack, url, uuid)
