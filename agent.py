@@ -4,8 +4,6 @@ from collections import namedtuple
 import logging
 from typing import List, Dict
 import requests
-import zmq
-import threading
 
 from common.game_elements import Map, Pos, GameState, Dir, State
 import common.tiles as tiles
@@ -30,12 +28,7 @@ INPUT = 'input'
 COMMAND = 'command_'
 END = 'end'
 
-AWAIT_FOR_INPUT = ''
-
 Node = namedtuple("Node", "x y dir")
-
-# This event will trigger when a 'Enter' is pressed in viewer
-key_event = threading.Event()
 
 def get_parser():
     # Create the argument parser
@@ -51,11 +44,6 @@ def get_parser():
         nargs='?',
         help="The port of the game server to connect to"
     )
-    parser.add_argument(
-        "wait_for_input",
-        nargs="?",
-        help="Client needs to wait for user input in order to move (Yes/ No)"
-    )
 
     return parser
 
@@ -65,19 +53,19 @@ def bfs(game_state: GameState, stack: List[Node]):
 
     if node.dir:
         pos = Dir.move(node, node.dir)
-        if game_state.visited.in_map(pos):
+        if game_state.current_map.in_map(pos):
             if game_state.current_map[pos] == tiles.UnknownTile.code:
                 # Put back the same node to retry it if we find an UnknownTile
                 stack.pop()
                 stack.append(node)
                 return None
-            elif game_state.visited[pos] == State.VISITED:
-                game_state.visited[pos] = State.NEW
+            elif game_state.visited[pos].state == State.NEW:
+                game_state.visited[pos].state = State.OPEN
                 stack.append(Node(*pos, Dir.N))
                 # print("Visiting", pos) # TODO remove
                 return node.dir
     else:
-        game_state.visited[node.x][node.y] = State.VISITED
+        game_state.visited[node.x][node.y].state = State.VISITED
         stack.pop()
         prev_node = stack[-1]
         undo_move = Dir.get_direction(node, prev_node)
@@ -151,8 +139,6 @@ def run(game_state: GameState, stack: List[Node], url, uuid):
     game_state.new_round()
 
 def main(args=None):
-    global AWAIT_FOR_INPUT
-
     parser = get_parser()
     args = parser.parse_args(args)
 
@@ -162,9 +148,6 @@ def main(args=None):
 
     if not url.startswith('http://'):
         url = 'http://' + url
-
-    AWAIT_FOR_INPUT = args.wait_for_input
-    print(AWAIT_FOR_INPUT)
 
     game_state, uuid, stack = connect(None, None, url, None)
 

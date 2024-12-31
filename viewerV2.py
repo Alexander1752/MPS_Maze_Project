@@ -4,12 +4,9 @@ from tkinter import Canvas
 from PIL import Image, ImageTk, ImageDraw
 import requests
 import threading
-import zmq
-from pynput import keyboard
 from sseclient_local import SSEClient
 
-
-from typing import List, Tuple
+from typing import List
 
 from common.game_elements import Map
 import common.tiles as tiles
@@ -36,42 +33,6 @@ POSITION_TO_ARROW = {
 }
 
 AGENT_UUID = ''
-
-
-def get_character_position(app):
-    global AGENT_UUID
-
-    character_pos_response = requests.get('http://127.0.0.1:5000/character_position')
-    # print(character_pos_response.json())
-
-    # Invert positions, not sure why
-    app.character_position[0] = int(character_pos_response.json()['entrance_y'])
-    app.character_position[1] = int(character_pos_response.json()['entrance_x'])
-
-    maze_file = str(character_pos_response.json()['maze_file'])
-    AGENT_UUID = str(character_pos_response.json()['agent_uuid'])
-
-    # Maze layer
-    app.load_maze(maze_file)
-
-    # Paths + agent layer
-    app.new_layer()
-    app.draw_path(app.character_position[0], app.character_position[1], AGENT_COLOR)
-    app.draw_path(app.maze.exit.y, app.maze.exit.x, (0, 255, 0))
-
-    # Traps layer
-    app.draw_traps()
-
-def listen_to_server(app):
-    # print(app)
-
-    server_url = f"http://127.0.0.1:5000/events/{AGENT_UUID}"
-
-    events = SSEClient(server_url)
-
-    for event in events:
-        app.move_character(*event.data.split(','))
-        # print(f"Received event: {event.event}, data: {event.data}") TODO: uncomment
 
 class ViewerApp:
     def __init__(self, root: tk.Tk):
@@ -274,6 +235,41 @@ class ViewerApp:
 
         self.pixels[TRAP_LAYER].point(points, TRAP_VALUE_COLOR)
         self.modified[TRAP_LAYER] = True
+
+def get_character_position(app: ViewerApp):
+    global AGENT_UUID
+
+    character_pos_response = requests.get('http://127.0.0.1:5000/character_position')
+    # print(character_pos_response.json())
+
+    # Invert positions, not sure why
+    app.character_position[0] = int(character_pos_response.json()['entrance_y'])
+    app.character_position[1] = int(character_pos_response.json()['entrance_x'])
+
+    maze_file = str(character_pos_response.json()['maze_file'])
+    AGENT_UUID = str(character_pos_response.json()['agent_uuid'])
+
+    # Maze layer
+    app.load_maze(maze_file)
+
+    # Paths + agent layer
+    app.new_layer()
+    app.draw_path(app.character_position[0], app.character_position[1], AGENT_COLOR)
+    app.draw_path(app.maze.exit.y, app.maze.exit.x, (0, 255, 0))
+
+    # Traps layer
+    app.draw_traps()
+
+def listen_to_server(app: ViewerApp):
+    # print(app)
+
+    server_url = f"http://127.0.0.1:5000/events/{AGENT_UUID}"
+
+    events = SSEClient(server_url)
+
+    for event in events:
+        app.move_character(*event.data.split(','))
+        # print(f"Received event: {event.event}, data: {event.data}") TODO: uncomment
 
 main_root = None
 
