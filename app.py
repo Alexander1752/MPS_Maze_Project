@@ -175,10 +175,10 @@ def check_neigh(curr_i: int, curr_j: int, searched_i: int, searched_j: int):
 
     return False
 
-def disguise_traps(game_state: GameState):
+def disguise_traps(game_state: GameState, pos: Pos | None = None):
     global FRIENDLY_MODE
 
-    view = game_state.view()
+    view = game_state.view(pos)
     # Assume we receive a square matrix with an odd length
     agent_pos = Pos(len(view) // 2, len(view) // 2)
 
@@ -192,6 +192,8 @@ def disguise_traps(game_state: GameState):
                 if check_neigh(agent_pos.x, agent_pos.y, i, j) is True:
                     # The tile is adjacent to the player pos
                     view[i][j] = tiles.UnknownTrap.code
+                elif (agent_pos.x, agent_pos.y) != (i, j): # not a neighbor and not on the trap itself
+                    view[i][j] = tiles.Path.code
 
     return serialize_view(view)
 
@@ -208,7 +210,12 @@ def check_moves(agent_uuid: str, moves: List[str]):
         command_result = AGENTS[agent_uuid].perform_command(move)
         response[command_no][COMMAND_RESULT_FIELD] = str(1 if command_result is None else command_result)
 
-        EVENT_QUEUES[agent_uuid].put(AGENTS[agent_uuid].pos)
+        # # check if the command
+        # if command_result == '1' and move in ['N', 'S', 'E', 'W']:
+        #     EVENT_QUEUE.put(move)
+
+        for pos in AGENTS[agent_uuid].visited_pos:
+            EVENT_QUEUES[agent_uuid].put(pos)
 
         # Check if after the previous move, the agent reached the exit
         agent_pos = AGENTS[agent_uuid].pos
@@ -216,7 +223,17 @@ def check_moves(agent_uuid: str, moves: List[str]):
             end_reached = True
             break
 
-        response[command_no][VIEW_FIELD] = disguise_traps(AGENTS[agent_uuid])
+        if len(AGENTS[agent_uuid].visited_pos) == 0:
+            AGENTS[agent_uuid].visited_pos = [AGENTS[agent_uuid].pos]
+
+        views = []
+        for pos in AGENTS[agent_uuid].visited_pos:
+            views.append(disguise_traps(AGENTS[agent_uuid], pos))
+
+        if len(views) == 1:
+            views = views[0]
+
+        response[command_no][VIEW_FIELD] = views
 
     response[MOVES_FIELD] = str(AGENTS[agent_uuid].next_round_moves)
     AGENTS[agent_uuid].new_round()

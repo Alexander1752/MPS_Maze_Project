@@ -8,9 +8,23 @@ from typing import List, Dict, Tuple, Union
 
 import common.tiles as tiles
 
-MAX_NUM_PREV_MOVES = 100
-
 Pos = namedtuple("Pos", "x y")
+
+class State(int, Enum):
+    NEW     = 0
+    OPEN    = 1
+    VISITED = 2
+    WALL    = 3
+
+class VisitNode:
+    def __init__(self, *, w_visited=False, e_visited=False, n_visited=False, s_visited=False, parent: Pos | None=None, state: State=State.NEW):
+        self.w_visited = w_visited
+        self.e_visited = e_visited
+        self.n_visited = n_visited
+        self.s_visited = s_visited
+
+        self.parent = parent
+        self.state = state
 
 class Dir:
     N = 'N'
@@ -65,11 +79,6 @@ class Dir:
                 return dir
             dir = cls.NEXT[dir]
 
-class State(int, Enum):
-    NEW     = 0
-    VISITED = 1
-    WALL    = 2
-
 class Map(np.ndarray):
     """ Class that extends a numpy matrix to add the anchor, it's weird because it needs to be; 
     just use it like `map[x][y]` and `map.anchor.x` and it all should be good """
@@ -88,7 +97,7 @@ class Map(np.ndarray):
         height: int = 0,
         nparr: np.ndarray | None = None, # harta, matrice care tine codurile de la 0-255
         prev_map: Union['Map', None] = None,
-        prev_visited: Union['Map', None] = None,
+        prev_visited: Union[np.ndarray[VisitNode], None] = None,
         prev_pos: Pos | None = None,
     ):
         if nparr is not None:
@@ -127,10 +136,10 @@ class Map(np.ndarray):
         self.entrance: Pos | None = getattr(obj, 'entrance', None)
         self.exit:     Pos | None = getattr(obj, 'exit', None)
 
-        self.portal2maps: Dict[Pos, Tuple[Map, Map]] = getattr(obj, 'portal2map', {})
+        self.portal2maps: Dict[Pos, Tuple[Map, np.ndarray[VisitNode]]] = getattr(obj, 'portal2map', {})
         self.prev_map: Map = getattr(obj, 'prev_map', None)
-        self.prev_visited: Map = getattr(obj, 'prev_visited', None)
-        self.prev_pos: Map = getattr(obj, 'prev_pos', None)
+        self.prev_visited: np.ndarray[VisitNode] = getattr(obj, 'prev_visited', None)
+        self.prev_pos: Pos = getattr(obj, 'prev_pos', None)
 
     def in_map(self, *args):
         if len(args) == 1:
@@ -191,7 +200,7 @@ class Map(np.ndarray):
 class GameState:
     MAX_MOVES_PER_TURN = 10
     START_XRAY_POINTS = 10
-
+    MAX_NUM_PREV_MOVES = 100
 
     #TODO: add visibility 
     def __init__(
@@ -222,8 +231,7 @@ class GameState:
             self.pos = self.current_map.entrance
 
         if agent:
-            self.visited = self.current_map.copy()
-            self.visited.fill(State.VISITED)
+            self.visited = np.array([VisitNode() for _ in range(np.prod(self.current_map.shape))]).reshape(self.current_map.shape)
 
         self.agent = agent
 
@@ -237,35 +245,50 @@ class GameState:
         self._visibility = visibility
         self.xray_on = 0
 
-        self.prev_moves = [] # list of previous moves
+        # List of previous moves (used for rewinding)
+        self.prev_moves = []
+
+        # List of visited positions in the last move (since the last perform_command() call)
+        self.visited_pos = []
+
+        # Used for disabling dropping moves when hitting a wall due to a trap
+        self.reduce_moves_switch = True
+
+        # Used for undoing a MovesDecreaseTrap when rewinding such trap
+        self.in_rewind = False
+
+        # Used to mark the first trap stepped on in a move
+        self.first_trap: Pos | None = None
 
         self.add_view(view)
 
-    def add_view(self, view: str):
+    def add_view(self, view: str, *, pos: Pos | None = None):
         if not view:
             return
+
+        if pos is None:
+            pos = self.pos
 
         view: List[List[int]] = deserialize_view(view)
         visibility = len(view) // 2
         view_i = 0
         view_j = 0
-        for i in range(self.pos.x - visibility, self.pos.x + visibility + 1):
-            for j in range(self.pos.y - visibility, self.pos.y + visibility + 1):
+        for i in range(pos.x - visibility, pos.x + visibility + 1):
+            for j in range(pos.y - visibility, pos.y + visibility + 1):
                 if self.current_map.in_map(i, j):
                     old_val = tiles.from_code(self.current_map[i][j])
-                    new_val = view[view_i][view_j]
+                    new_val = tiles.from_code(view[view_i][view_j])
 
-                    if self.agent:
-                        if new_val == tiles.Wall.code or old_val.code == tiles.Wall.code:
-                            self.visited[i][j] = State.WALL
+                    if isinstance(new_val, tiles.Wall) or isinstance(old_val, tiles.Wall):
+                        self.visited[i][j].state = State.WALL
 
                     if isinstance(old_val, tiles.Trap):
                         if isinstance(old_val, tiles.UnknownTrap) and new_val != tiles.Path.code:
                             # Only overwrite a Trap if it is with more information than what's already available
-                            self.current_map[i][j] = new_val
+                            self.current_map[i][j] = new_val.code
                     else:
                         # if it's not a trap, write whatever we received
-                        self.current_map[i][j] = new_val
+                        self.current_map[i][j] = new_val.code
 
                 view_j += 1
             view_j = 0
@@ -273,39 +296,48 @@ class GameState:
 
     # TODO: this will need to be changed -- ar fi bine sa dea return la vizibilitate. Pot sa fac chestia asta pe
     # pe server si asta ar trebui sa dea macar un raspuns de ok sau nu.
-    def perform_command(self, move: str, max_num_traps_redirect:int|None=None): # XXX maybe consider returning here the command result, visibility around agent etc.
+    def perform_command(self, move: str, *, views: list=None, max_num_traps_redirect:int|None=None): # XXX maybe consider returning here the command result, visibility around agent etc.
         """ Applies a command on this game state """
         self.moves -= 1
         self.xray_on = 0
         self.prev_moves.append(move)
-        self.prev_moves = self.prev_moves[-MAX_NUM_PREV_MOVES:] # limit to 100 prev moves
+        self.prev_moves = self.prev_moves[-self.MAX_NUM_PREV_MOVES:] # limit to 100 prev moves
+        self.visited_pos = []
+
         match move:
             case 'X': # TODO support greater size xray
-                return self.use_xray()
+                return self.use_xray(views)
             case 'N' | 'S' | 'E' | 'W':
-                return self.move(move)
+                return self.move(move, views=views)
             case 'P':
-                return self.enter_portal()
+                return self.enter_portal(views=views)
             case '': # empty command
                 self.prev_moves.pop() # remove empty command if it was just added
                 return
             case _:
                 raise ValueError(f'"{move}" is not a valid move')
 
-    def move(self, direction, max_num_traps_redirect:int|None=None):
+    def move(self, direction, *, views: list=None, max_num_traps_redirect:int|None=None):
         """ Applies a move command on this game state (not X-Ray) """
 
         if max_num_traps_redirect is not None and max_num_traps_redirect < 0:
             raise ValueError("Too many trap redirects")
 
         self.pos = Dir.move(self.pos, direction) # move into the tile, even if wall (its effect will move us back where we started from)
-        logging.debug(f'Moved into tile {self.current_map[self.pos.x][self.pos.y]}')
+
+        if not self.visited_pos or self.visited_pos[-1] != self.pos:
+            self.visited_pos.append(self.pos)
+
+        if views and self.current_map[self.pos] != tiles.Wall.code:
+            self.add_view(views.pop(0))
+
+        logging.debug(f'Moved into tile {self.current_map[self.pos]}')
         effect = tiles.from_code(self.current_map[self.pos]).visit(direction)
-        if effect.activate(self, max_num_traps_redirect) is not None:
+        if effect.activate(self, views=views, max_num_traps_redirect=max_num_traps_redirect) is not None:
             return '0'
         return '1'
 
-    def enter_portal(self):
+    def enter_portal(self, *, views: list=None):
         if tiles.CODE_TO_TYPE[self.current_map[self.pos]] != tiles.Portal:
             self.decrease_next_round_moves()
             return '0' # failure
@@ -320,8 +352,7 @@ class GameState:
                     new_map = Map(agent_map=True, prev_map=self.current_map, prev_visited=self.visited, prev_pos=self.pos)
                     new_map[new_map.anchor] = self.current_map[self.pos]
 
-                    new_visited = new_map.copy()
-                    new_visited.fill(State.VISITED)
+                    new_visited = np.array([VisitNode() for _ in range(np.prod(new_map.shape))]).reshape(new_map.shape)
 
                     self.current_map.portal2maps[self.pos] = (new_map, new_visited)
 
@@ -331,6 +362,9 @@ class GameState:
             pair = self.current_map.portals[self.pos]
             self.pos = pair
 
+        self.visited_pos.append(self.pos)
+        if views is not None:
+            self.add_view(views.pop(0))
         return '1' # success
 
     def decrease_next_round_moves(self, amount: int = 1):
@@ -342,7 +376,11 @@ class GameState:
         self.moves = self.next_round_moves
         self.next_round_moves = self.MAX_MOVES_PER_TURN
 
-    def use_xray(self):
+    def use_xray(self, views: list=None):
+        if views is not None:
+            self.add_view(views.pop(0))
+
+        self.visited_pos.append(self.pos)
         if self.xray_points <= 0:
             self.decrease_next_round_moves()
             return '0'
@@ -351,10 +389,12 @@ class GameState:
         self.xray_on += 1
         return '1'
 
-    @property
-    def visibility(self):
+    def visibility(self, pos: Pos | None = None):
+        if pos is None:
+            pos = self.pos
+
         visibility = self._visibility
-        tile_type = tiles.CODE_TO_TYPE[self.current_map[self.pos]]
+        tile_type = tiles.CODE_TO_TYPE[self.current_map[pos]]
 
         if tile_type == tiles.Fog:
             visibility -= 1
@@ -365,11 +405,14 @@ class GameState:
 
         return visibility
 
-    def view(self):
+    def view(self, pos: Pos | None = None):
         """Returns a matrix that represents the visible area around the player"""
-        x = self.pos.x
-        y = self.pos.y
-        visibility = self.visibility
+        if pos is None:
+            pos = self.pos
+
+        x = pos.x
+        y = pos.y
+        visibility = self.visibility(pos)
 
         current_visibility = [[0 for _ in range(2 * visibility + 1)] for _ in range(2 * visibility + 1)]
 

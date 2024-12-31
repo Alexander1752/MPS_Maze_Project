@@ -240,7 +240,7 @@ def generate_maze(width, height, seed=None, * , max_traps=0, retry=False):
                     state = GameState(maps=[maze], pos=pos)
 
                     try:
-                        state.perform_command(Dir.get_direction(neigh, pos), MAX_NUM_TRAPS_REDIRECT)
+                        state.perform_command(Dir.get_direction(neigh, pos), max_num_traps_redirect=MAX_NUM_TRAPS_REDIRECT)
                     except:
                         valid = False
                         break
