@@ -30,6 +30,12 @@ def get_parser():
         help="Set server on await for input mode"
     )
 
+    parser.add_argument(
+        "-u",
+        action="store_false",
+        help="Set the server in unfriendly mode"
+    )
+
     return parser
 
 server = Flask(__name__)
@@ -300,6 +306,9 @@ def main(args=None):
 
     global AWAIT_FOR_INPUT
     AWAIT_FOR_INPUT = ARGS.w
+
+    global FRIENDLY_MODE
+    FRIENDLY_MODE = ARGS.u
 
     if ARGS.maze is not None:
         MAZE = Map.load_from_file(ARGS.maze)
