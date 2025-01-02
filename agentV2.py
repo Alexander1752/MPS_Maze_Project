@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 import argparse
-from collections import OrderedDict
+from collections import OrderedDict, deque
 from copy import copy
 import logging
 from typing import List, Dict, Any, TypeVar
 import requests
 
-from common.game_elements import Pos, GameState, Dir, State, VisitNode 
+from common.game_elements import Pos, GameState, Dir, State, VisitNode , Map
 import common.tiles as tiles
 
 logging.basicConfig(filename='log.txt',
@@ -29,8 +29,6 @@ INPUT = 'input'
 COMMAND = 'command_'
 END = 'end'
 
-AWAIT_FOR_INPUT = False
-
 def get_parser():
     # Create the argument parser
     parser = argparse.ArgumentParser(description="Start this agent.")
@@ -45,11 +43,10 @@ def get_parser():
         nargs='?',
         help="The port of the game server to connect to"
     )
-
     parser.add_argument(
-        "-w",
+        "--wait-for-input", "-w",
         action="store_true",
-        help="Enable await for input flag"
+        help="Makes the agent wait for ENTER to be pressed before sending commands to the server"
     )
 
     return parser
@@ -68,6 +65,38 @@ def get_temp(map, dict: Dict[Pos, T], pos: Pos) -> T:
 
     return dict[pos]
 
+def check_path(map: Map, pos: Pos, parent: Pos):
+    if map[pos] == tiles.Exit.code:
+        return True
+
+    DISCOVERED = tiles.CODE_TO_TYPE.index(None) # use an unused value to mark discovered nodes
+    discovered: Dict[Pos, int] = {}
+    discovered[pos] = DISCOVERED
+    discovered[parent] = DISCOVERED # deny going to the parent
+
+    queue = deque([pos])
+
+    while queue:
+        pos = queue.popleft()
+
+        for dir in [Dir.N, Dir.S, Dir.W, Dir.E]:
+            neigh = Dir.move(pos, dir)
+
+            if not map.in_map(neigh):
+                continue
+
+            neigh_code = get_temp(map, discovered, neigh)
+            discovered[neigh] = DISCOVERED
+
+            if neigh_code in [tiles.Exit.code, tiles.UnknownTile.code]:
+                return True
+
+            if neigh_code != DISCOVERED and tiles.CODE_TO_TYPE[neigh_code] not in [tiles.Wall, tiles.BackwardTrap, tiles.RewindTrap]:
+                queue.append(neigh)
+
+    return False
+
+
 def dfs(game_state: GameState, temp_visited: Dict[Pos, VisitNode], visited_pos: List[Pos], pos: Pos):
     # If we just stepped on a trap (that is not a MovesTrap), don't make another move until we find out what just happened
     tile = tiles.from_code(game_state.current_map[pos])
@@ -75,32 +104,34 @@ def dfs(game_state: GameState, temp_visited: Dict[Pos, VisitNode], visited_pos: 
         return None
 
     node: VisitNode = get_temp(game_state.visited, temp_visited, pos)
+    dirs = []
 
     if not node.w_visited:
-        dir = Dir.W
-    elif not node.e_visited:
-        dir = Dir.E
-    elif not node.n_visited:
-        dir = Dir.N
-    elif not node.s_visited:
-        dir = Dir.S
+        dirs.append(Dir.W)
+    if not node.e_visited:
+        dirs.append(Dir.E)
+    if not node.n_visited:
+        dirs.append(Dir.N)
+    if not node.s_visited:
+        dirs.append(Dir.S)
     # TODO add portal as alternative move
-    else:
-        dir = None
 
-    if dir:
+    for dir in dirs:
         new_pos = Dir.move(pos, dir)
         if new_pos != node.parent and game_state.current_map.in_map(new_pos):
             # Don't make another move if we find an UnknownTile, wait for more info from the server
             if game_state.current_map[new_pos] == tiles.UnknownTile.code:
-                return None
+                # if this is the last direction and it is unknown, wait for more info; otherwise, try another (possibly known) direction
+                if dirs[-1] == dir:
+                    return None
+                continue
 
             new_pos_node = get_temp(game_state.visited, temp_visited, new_pos)
 
             if tiles.CODE_TO_TYPE[game_state.current_map[new_pos]] in [tiles.BackwardTrap, tiles.RewindTrap]:
                 new_pos_node.state = State.WALL
 
-            if new_pos_node.state in [State.NEW, State.OPEN]:
+            if new_pos_node.state in [State.NEW, State.OPEN] and check_path(game_state.current_map, new_pos, pos):
                 visited_pos.append(new_pos)
                 new_pos_node.state = State.OPEN
 
@@ -113,13 +144,12 @@ def dfs(game_state: GameState, temp_visited: Dict[Pos, VisitNode], visited_pos: 
         visit_node(node, dir)
         return dfs(game_state, temp_visited, visited_pos, pos)
 
-    else:
-        node.state = State.VISITED
-        prev_pos: Pos = node.parent
-        undo_move = Dir.get_direction(pos, prev_pos)
-        visited_pos.append(prev_pos)
-        print("Visiting", prev_pos) # TODO remove
-        return undo_move
+    node.state = State.VISITED
+    prev_pos: Pos = node.parent
+    undo_move = Dir.get_direction(pos, prev_pos)
+    visited_pos.append(prev_pos)
+    print("Visiting", prev_pos) # TODO remove
+    return undo_move
 
 def connect(game_state: GameState | None, url, uuid):
     response = requests.post(url + REGISTER, json={UUID: uuid} if uuid else {})
@@ -146,18 +176,12 @@ def send_commands(url, uuid, commands: list) -> Dict[str, str]:
     logger.debug(f"Sending '{commands_str}'")
     commands_json = {INPUT : commands_str, UUID: uuid}
 
-    if AWAIT_FOR_INPUT:
-        while(True): # Wait until I receive the send commnad from terminal
-            user_input = input()
-            if (user_input == "send"):
-                break
-
     response = requests.post(url + SEND_MOVES, json=commands_json)
 
     logger.debug(f"Received {response}")
     return response.json()
 
-def run(game_state: GameState, url, uuid):
+def run(game_state: GameState, url, uuid, wait_for_input=False):
     commands = []
     pos = game_state.pos
     temp_visited: Dict[Pos, VisitNode] = OrderedDict()
@@ -176,6 +200,10 @@ def run(game_state: GameState, url, uuid):
             # Just try a random move and see what happens
             commands = [Dir.N]
             # TODO take into account the fact that the move might've actually taken place (didn't hit a wall)
+
+    if wait_for_input:
+        print("Sending", commands)
+        input("Press Enter to continue...")
 
     response = send_commands(url, uuid, commands)
 
@@ -226,6 +254,7 @@ def run(game_state: GameState, url, uuid):
             game_state.visited[pos].parent = prev_pos
 
         # Special case for the forward trap: if going over it again and we end up on it's parent, it is visited
+        # TODO take into account the case in which we step over twice over the same ForwardTrap due to other moves and/or traps, which marks it as fully visited when it is not
         if tiles.CODE_TO_TYPE[game_state.current_map[prev_pos]] == tiles.ForwardTrap and \
                 pos == game_state.visited[prev_pos].parent:
             game_state.visited[prev_pos].state = State.VISITED
@@ -247,13 +276,10 @@ def main(args=None):
     if not url.startswith('http://'):
         url = 'http://' + url
 
-    global AWAIT_FOR_INPUT 
-    AWAIT_FOR_INPUT = args.w
-
     game_state, uuid = connect(None, url, None)
     while True:
         # try:
-            run(game_state, url, uuid)
+            run(game_state, url, uuid, args.wait_for_input)
         # except Exception as e: # TODO
         #     logger.exception(e)
         #     # print(e, trace)
