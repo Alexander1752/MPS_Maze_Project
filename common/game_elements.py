@@ -184,7 +184,7 @@ class Map(np.ndarray):
 
         for code, type in enumerate(tiles.CODE_TO_TYPE):
             if type:
-                rgb[self == code] = type.color
+                rgb[self == code] = tiles.from_code(code).color
 
         return Image.fromarray(rgb).convert("RGBA")
 

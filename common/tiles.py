@@ -4,6 +4,7 @@ from abc import ABC, abstractmethod
 from typing import List, Dict, Type, Union
 
 import common.effects as effects
+import colorsys
 
 def from_code(code: int) -> 'Tile':
     """ Create a Tile entity from a tile code """
@@ -147,11 +148,15 @@ class BackwardTrap(Trap):
     def visit(self, direction) -> effects.Effect:
         return effects.PushBackwardEffect(direction, self._n)
 
+def hsv2rgb(h,s,v):
+    return tuple(round(i * 255) for i in colorsys.hsv_to_rgb(h,s,v))
+
 class Portal(Tile):
     color = (54, 192, 241)
     def __init__(self, code: int, pair: Union['Portal', None] = None):
         super().__init__(code)
         self._pair = pair
+        self.color = hsv2rgb((code - 150) / 25, 1, 1)
 
     @property
     def pair(self):

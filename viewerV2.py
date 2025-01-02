@@ -239,6 +239,21 @@ class ViewerApp:
         self.pixels[TRAP_LAYER].point(points, TRAP_VALUE_COLOR)
         self.modified[TRAP_LAYER] = True
     
+    def draw_portals(self):
+        portals = list(self.maze.portals.keys())
+        if len(portals) == 0:
+            return
+        
+        coords = [(1, 0), (2, 0), (3, 0), (0, 1), (0, 2), (0, 3), (4, 1), (4, 2), (4, 3), (1, 4), (2, 4), (3, 4)]
+        points = []
+
+        for (y, x) in portals:
+            color = tiles.from_code(self.maze[y, x]).color
+            points = [(x * PIXELS_PER_SQUARE + i, y * PIXELS_PER_SQUARE + j) for i, j in coords]
+            self.pixels[PATH_LAYER].point(points, (255 - color[0], 255 - color[1], 255 - color[2]))
+        
+        self.modified[PATH_LAYER] = True
+    
     def on_click_button(self):
         print("GATA")
         requests.get(f'http://127.0.0.1:5000/wait_for_input/{self.uuid}')
@@ -264,6 +279,9 @@ def get_character_position(app: ViewerApp):
 
     # Traps layer
     app.draw_traps()
+
+    # Portals layer
+    app.draw_portals()
 
 def listen_to_server(app: ViewerApp):
     # print(app)
