@@ -253,7 +253,7 @@ class GameState:
         self.prev_moves = []
 
         # List of visited positions in the last move (since the last perform_command() call)
-        self.visited_pos = []
+        self.visited_pos: List[Pos] = []
 
         # Used for disabling dropping moves when hitting a wall due to a trap
         self.reduce_moves_switch = True

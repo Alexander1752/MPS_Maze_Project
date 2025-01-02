@@ -1,4 +1,5 @@
 from functools import reduce
+import json
 import tkinter as tk
 from tkinter import Canvas
 from PIL import Image, ImageTk, ImageDraw
@@ -6,7 +7,7 @@ import requests
 import threading
 from sseclient_local import SSEClient
 
-from typing import List
+from typing import List, Tuple
 
 from common.game_elements import Map
 import common.tiles as tiles
@@ -18,12 +19,13 @@ REFRESH_INTERVAL = 200 # ms
 IMG_LAYER = 0
 PATH_LAYER = 1
 TRAP_LAYER = 2
+FOG_LAYER = -1 # last layer, indexing a Python list
 
 PATH_COLOR = (127, 121, 0)
 AGENT_COLOR = (255, 242, 0)
 TRAP_VALUE_COLOR = (0, 0, 0)
 TRANSPARENT = (0, 0, 0, 0)
-OPAQUE_BLACK = (0, 0, 0, 255)
+OPAQUE_FOG = (63, 63, 63, 255)
 
 POSITION_TO_ARROW = {
     'N': 'Up',
@@ -33,9 +35,10 @@ POSITION_TO_ARROW = {
 }
 
 class ViewerApp:
-    def __init__(self, root: tk.Tk, await_for_input):
+    def __init__(self, root: tk.Tk, await_for_input, fog=False):
         self.root = root
         self.root.title("Viewer")
+        self.fog = fog
 
         # Initialize canvas and scrollbars
         self.canvas = Canvas(self.root, bg="black")
@@ -251,9 +254,8 @@ class ViewerApp:
         portals = list(self.maze.portals.keys())
         if len(portals) == 0:
             return
-        
+
         coords = [(1, 0), (2, 0), (3, 0), (0, 1), (0, 2), (0, 3), (4, 1), (4, 2), (4, 3), (1, 4), (2, 4), (3, 4)]
-        points = []
 
         for (y, x) in portals:
             color = tiles.from_code(self.maze[y, x]).color
@@ -261,7 +263,7 @@ class ViewerApp:
             self.pixels[PATH_LAYER].point(points, (255 - color[0], 255 - color[1], 255 - color[2]))
         
         self.modified[PATH_LAYER] = True
-    
+
     def draw_xray_points(self, xray_points = None, color = (255, 0, 0)):
         if xray_points is None:
             xray_points = self.maze.xrays_on_map
@@ -277,6 +279,14 @@ class ViewerApp:
 
         self.pixels[IMG_LAYER].point(points, color)
         self.modified[IMG_LAYER] = True
+
+    def draw_fog(self):
+        self.new_layer(color=OPAQUE_FOG)
+
+    def erase_fog(self, tiles: List[Tuple[int, int]]):
+        first_pos = (tiles[1] * PIXELS_PER_SQUARE, tiles[0] * PIXELS_PER_SQUARE)
+        second_pos = ((tiles[3] + 1) * PIXELS_PER_SQUARE - 1, (tiles[2] + 1) * PIXELS_PER_SQUARE - 1)
+        self.pixels[FOG_LAYER].rectangle([first_pos, second_pos], TRANSPARENT)
 
     def on_click_button(self):
         print("GATA")
@@ -310,6 +320,9 @@ def get_character_position(app: ViewerApp):
     # Xray points
     app.draw_xray_points()
 
+    if app.fog:
+        app.draw_fog()
+
 def listen_to_server(app: ViewerApp):
     # print(app)
 
@@ -318,12 +331,21 @@ def listen_to_server(app: ViewerApp):
     events = SSEClient(server_url)
 
     for event in events:
-        app.move_character(*event.data.split(','))
+        event = json.loads(event.data)
+
+        if 'pos' in event:
+            # Format is {"pos": [x, y]}
+            app.move_character(event['pos'][0], event['pos'][1])
+        
+        if app.fog and 'view' in event:
+            # Format is {"view": [x1, y1, x2, y2]}
+            app.erase_fog(event['view'])
+
         # print(f"Received event: {event.event}, data: {event.data}") TODO: uncomment
 
 main_root = None
 
-def create_viewer(await_for_input=False):
+def create_viewer(await_for_input=False, fog=False):
     global main_root
 
     if main_root is None:
@@ -333,7 +355,7 @@ def create_viewer(await_for_input=False):
 
     # Create a new Toplevel window for the viewer
     root = tk.Toplevel(main_root)
-    app = ViewerApp(root, await_for_input)
+    app = ViewerApp(root, await_for_input, fog)
     get_character_position(app)
 
     threading.Thread(target=listen_to_server, args=(app,), daemon=True).start()

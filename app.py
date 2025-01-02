@@ -1,6 +1,7 @@
 """This file contains the implementation of the server"""
 import argparse
 from flask import Flask, Response, request, jsonify
+import json
 from pathlib import Path
 from typing import List, Dict
 import time
@@ -34,6 +35,12 @@ def get_parser():
         "-u",
         action="store_false",
         help="Set the server in unfriendly mode"
+    )
+
+    parser.add_argument(
+        "-f",
+        action="store_true",
+        help="Set viewers to show fog on areas not viewed by agent"
     )
 
     return parser
@@ -71,8 +78,8 @@ DEFAULT_MAZE_WIDTH  = 40
 DEFAULT_NOF_TRAPS = 0
 DEFAULT_SEED = None
 
-
 AWAIT_FOR_INPUT = False
+VIEWER_FOG = False
 
 @server.route('/api/register_agent', methods=['POST'])
 def register_agent():
@@ -93,9 +100,8 @@ def register_agent():
             AGENT_VIEWER[str(UUID_CURRENT_COUNTER)] = False
 
             EVENT_QUEUES[str(UUID_CURRENT_COUNTER)] = queue.Queue()
-            ## need to keep track of the viewer, because of threading and root.mainloop, i cant return the instance of the 
-            ## viewer. I will pass the argument of the uuid to identify the viewer when it is created and memorize the instance there
-            threading.Thread(target=viewerV2.create_viewer, args=(AWAIT_FOR_INPUT,)).start()
+
+            threading.Thread(target=viewerV2.create_viewer, args=(AWAIT_FOR_INPUT,VIEWER_FOG)).start()
             
             # Register the first time the client contacted the server
             AGENTS_TIME[str(UUID_CURRENT_COUNTER)] = int(time.time())
@@ -232,12 +238,9 @@ def check_moves(agent_uuid: str, moves: List[str]):
         command_result = AGENTS[agent_uuid].perform_command(move)
         response[command_no][COMMAND_RESULT_FIELD] = str(1 if command_result is None else command_result)
 
-        # # check if the command
-        # if command_result == '1' and move in ['N', 'S', 'E', 'W']:
-        #     EVENT_QUEUE.put(move)
-
         for pos in AGENTS[agent_uuid].visited_pos:
-            EVENT_QUEUES[agent_uuid].put(pos)
+            # Format is {"pos": [x, y]}
+            EVENT_QUEUES[agent_uuid].put(json.dumps({'pos': [int(pos.x), int(pos.y)]}))
 
         # Check if after the previous move, the agent reached the exit
         agent_pos = AGENTS[agent_uuid].pos
@@ -251,6 +254,14 @@ def check_moves(agent_uuid: str, moves: List[str]):
         views = []
         for pos in AGENTS[agent_uuid].visited_pos:
             views.append(disguise_traps(AGENTS[agent_uuid], pos))
+
+            if VIEWER_FOG:
+                visibility = AGENTS[agent_uuid].visibility(pos)
+                first_pos  = (int(pos.x - visibility), int(pos.y - visibility))
+                second_pos = (int(pos.x + visibility), int(pos.y + visibility))
+
+                # Format is {"view": [x1, y1, x2, y2]}
+                EVENT_QUEUES[agent_uuid].put(json.dumps({'view': [*first_pos, *second_pos]}))
 
         if len(views) == 1:
             views = views[0]
@@ -284,9 +295,9 @@ def initial_data():
 def generate_events(agent_uuid):
     while True:
         if agent_uuid in EVENT_QUEUES.keys():
-            pos: Pos = EVENT_QUEUES[agent_uuid].get()
+            event = EVENT_QUEUES[agent_uuid].get()
             time.sleep(0.1)
-            yield f"data: {pos.x},{pos.y}\n\n"
+            yield f"data: {event}\n\n"
 
 @server.route('/wait_for_input/<agent_uuid>')
 def wait_for_input(agent_uuid):
@@ -309,6 +320,9 @@ def main(args=None):
 
     global FRIENDLY_MODE
     FRIENDLY_MODE = ARGS.u
+
+    global VIEWER_FOG
+    VIEWER_FOG = ARGS.f
 
     if ARGS.maze is not None:
         MAZE = Map.load_from_file(ARGS.maze)
