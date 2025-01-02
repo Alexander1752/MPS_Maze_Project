@@ -83,9 +83,11 @@ def neighbors(maze: Map, cell: Pos, value: int, search=True, generate_maze: bool
         n = list(cell)
         n[i % 2] += ((i - i % 2) or -2) // (1 if generate_maze else 2)
 
-        if n[0] < maze.shape[0] and n[1] < maze.shape[1] and n[0] > 0 and n[1] > 0:
-            if search and maze[n[0]][n[1]] == value:
-                neighbors.append(Pos(*n))
+        pos = Pos(*n)
+        if maze.in_map(pos):
+            if search and maze[pos] != value:
+                continue
+            neighbors.append(pos)
 
     return neighbors
 
@@ -217,6 +219,7 @@ def generate_maze(width, height, seed=None, * , max_traps=0, retry=False):
     print("Entrance:", entrance)
     print("Exit:", exit)
 
+    # generate traps
     for trap_type in [tiles.MovesTrap, tiles.ForwardTrap, tiles.BackwardTrap, tiles.RewindTrap]:
         num_trap = random.randint(0, max_traps)
         for _ in range(num_trap):
@@ -250,6 +253,29 @@ def generate_maze(width, height, seed=None, * , max_traps=0, retry=False):
 
             trap = trap_type(random.randint(1, 5))
             maze[i][j] = trap.code
+
+    # generate X-RAY points
+    for tile_type in [tiles.Xray, tiles.Fog, tiles.Tower]:
+        num_tiles = random.randint(0, max_traps)
+        for _ in range(num_tiles):
+            while True:
+                i = random.randint(0, height - 1)
+                j = random.randint(0, width - 1)
+                pos = Pos(i, j)
+
+                if maze[pos] != tiles.Path.code:
+                    continue
+
+                valid = True
+                for neigh in neighbors(maze, pos, tiles.Path.code, False):
+                    if maze[neigh] != tiles.Path.code and maze[neigh] != tiles.Wall.code:
+                        valid = False
+                        break
+
+                if valid:
+                    break
+    
+            maze[i][j] = tile_type.code
 
     return maze
 
