@@ -68,7 +68,7 @@ class Exit(Tile):
 
 class Xray(Tile):
     code = 16
-    color = (255, 128, 128)
+    color = Path.color
     def visit(self, direction) -> effects.Effect:
         return effects.XrayEffect(direction)
 

@@ -158,6 +158,10 @@ class Map(np.ndarray):
         return list(map(lambda l: Pos(l[0], l[1]), np.argwhere((self >= 96) & (self < 116))))
 
     @property
+    def xrays_on_map(self):
+        return list(map(lambda l: Pos(l[0], l[1]), np.argwhere(self == tiles.Xray.code)))
+    
+    @property
     def portals(self):
         portals_pos = list(np.argwhere((self >= 150) & (self <= 169)))
 

@@ -207,6 +207,14 @@ class ViewerApp:
         # TODO replace with agent image
         self.draw_path(self.character_position[0], self.character_position[1], color=AGENT_COLOR)
 
+        # update xray points
+        x = self.character_position[1]
+        y = self.character_position[0]
+
+        if self.maze[x, y] == tiles.Xray.code:
+            self.draw_xray_points([(x, y)], tiles.Xray.color)
+            self.maze[x, y] = tiles.Path.code
+
     def new_layer(self, color=TRANSPARENT):
         # Create fully transparent image
         new_img = Image.new("RGBA", (self.images[0].width, self.images[0].height), color)
@@ -254,6 +262,22 @@ class ViewerApp:
         
         self.modified[PATH_LAYER] = True
     
+    def draw_xray_points(self, xray_points = None, color = (255, 0, 0)):
+        if xray_points is None:
+            xray_points = self.maze.xrays_on_map
+
+        if len(xray_points) == 0:
+            return
+
+        coords = [(0, 0), (1, 1), (2, 2), (3, 3), (4, 4), (0, 4), (1, 3), (3, 1), (4, 0)]
+        points = []
+
+        for (y, x) in xray_points:
+            points.extend([(x * PIXELS_PER_SQUARE + i, y * PIXELS_PER_SQUARE + j) for i, j in coords])
+
+        self.pixels[IMG_LAYER].point(points, color)
+        self.modified[IMG_LAYER] = True
+
     def on_click_button(self):
         print("GATA")
         requests.get(f'http://127.0.0.1:5000/wait_for_input/{self.uuid}')
@@ -282,6 +306,9 @@ def get_character_position(app: ViewerApp):
 
     # Portals layer
     app.draw_portals()
+
+    # Xray points
+    app.draw_xray_points()
 
 def listen_to_server(app: ViewerApp):
     # print(app)
