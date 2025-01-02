@@ -11,6 +11,8 @@ from typing import List
 from common.game_elements import Map
 import common.tiles as tiles
 
+import agent_viewers
+
 PIXELS_PER_SQUARE = 5
 PAN_SPEED = 0.05
 REFRESH_INTERVAL = 200 # ms
@@ -35,7 +37,7 @@ POSITION_TO_ARROW = {
 AGENT_UUID = ''
 
 class ViewerApp:
-    def __init__(self, root: tk.Tk):
+    def __init__(self, root: tk.Tk, await_for_input):
         self.root = root
         self.root.title("Viewer")
 
@@ -89,6 +91,12 @@ class ViewerApp:
         self.root.bind('<Down>', self.move_character)
         self.root.bind('<Left>', self.move_character)
         self.root.bind('<Right>', self.move_character)
+
+
+        self.button_clicked = False
+        if await_for_input:
+            self.button = tk.Button(self.root, text="Input", command=self.on_click_button)
+            self.button.grid(row=2, column=0, columnspan=2, pady=5)
 
         # Pan position
         self.pan_start_x = 0
@@ -235,6 +243,11 @@ class ViewerApp:
 
         self.pixels[TRAP_LAYER].point(points, TRAP_VALUE_COLOR)
         self.modified[TRAP_LAYER] = True
+    
+    def on_click_button(self):
+        print("GATA")
+        self.button_clicked = True
+
 
 def get_character_position(app: ViewerApp):
     global AGENT_UUID
@@ -273,7 +286,7 @@ def listen_to_server(app: ViewerApp):
 
 main_root = None
 
-def create_viewer():
+def create_viewer(await_for_input=False, uuid=""):
     global main_root
 
     if main_root is None:
@@ -283,10 +296,15 @@ def create_viewer():
 
     # Create a new Toplevel window for the viewer
     root = tk.Toplevel(main_root)
-    app = ViewerApp(root)
+    app = ViewerApp(root, await_for_input)
     get_character_position(app)
 
     threading.Thread(target=listen_to_server, args=(app,), daemon=True).start()
 
+    
+    agent_viewers.AGENT_VIEWER[uuid] = app
+
     root.mainloop()
+
+    return app
 # if __name__ == "__main__":

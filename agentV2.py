@@ -29,6 +29,8 @@ INPUT = 'input'
 COMMAND = 'command_'
 END = 'end'
 
+AWAIT_FOR_INPUT = False
+
 def get_parser():
     # Create the argument parser
     parser = argparse.ArgumentParser(description="Start this agent.")
@@ -42,6 +44,12 @@ def get_parser():
         "port",
         nargs='?',
         help="The port of the game server to connect to"
+    )
+
+    parser.add_argument(
+        "-w",
+        action="store_true",
+        help="Enable await for input flag"
     )
 
     return parser
@@ -137,6 +145,13 @@ def send_commands(url, uuid, commands: list) -> Dict[str, str]:
     commands_str = ''.join(commands)
     logger.debug(f"Sending '{commands_str}'")
     commands_json = {INPUT : commands_str, UUID: uuid}
+
+    if AWAIT_FOR_INPUT:
+        while(True): # Wait until I receive the send commnad from terminal
+            user_input = input()
+            if (user_input == "send"):
+                break
+
     response = requests.post(url + SEND_MOVES, json=commands_json)
 
     logger.debug(f"Received {response}")
@@ -231,6 +246,9 @@ def main(args=None):
 
     if not url.startswith('http://'):
         url = 'http://' + url
+
+    global AWAIT_FOR_INPUT 
+    AWAIT_FOR_INPUT = args.w
 
     game_state, uuid = connect(None, url, None)
     while True:
