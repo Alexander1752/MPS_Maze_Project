@@ -11,8 +11,6 @@ from typing import List
 from common.game_elements import Map
 import common.tiles as tiles
 
-import agent_viewers
-
 PIXELS_PER_SQUARE = 5
 PAN_SPEED = 0.05
 REFRESH_INTERVAL = 200 # ms
@@ -33,8 +31,6 @@ POSITION_TO_ARROW = {
     'E': 'Right',
     'W': 'Left'
 }
-
-AGENT_UUID = ''
 
 class ViewerApp:
     def __init__(self, root: tk.Tk, await_for_input):
@@ -92,8 +88,6 @@ class ViewerApp:
         self.root.bind('<Left>', self.move_character)
         self.root.bind('<Right>', self.move_character)
 
-
-        self.button_clicked = False
         if await_for_input:
             self.button = tk.Button(self.root, text="Input", command=self.on_click_button)
             self.button.grid(row=2, column=0, columnspan=2, pady=5)
@@ -103,6 +97,7 @@ class ViewerApp:
         self.pan_start_y = 0
 
         self.character_position = [0, 0]
+        self.uuid = ""
         self.maze = None
 
     def load_maze(self, image_path):
@@ -246,12 +241,9 @@ class ViewerApp:
     
     def on_click_button(self):
         print("GATA")
-        self.button_clicked = True
-
+        requests.get(f'http://127.0.0.1:5000/wait_for_input/{self.uuid}')
 
 def get_character_position(app: ViewerApp):
-    global AGENT_UUID
-
     character_pos_response = requests.get('http://127.0.0.1:5000/character_position')
     # print(character_pos_response.json())
 
@@ -260,7 +252,7 @@ def get_character_position(app: ViewerApp):
     app.character_position[1] = int(character_pos_response.json()['entrance_x'])
 
     maze_file = str(character_pos_response.json()['maze_file'])
-    AGENT_UUID = str(character_pos_response.json()['agent_uuid'])
+    app.uuid = str(character_pos_response.json()['agent_uuid'])
 
     # Maze layer
     app.load_maze(maze_file)
@@ -276,7 +268,7 @@ def get_character_position(app: ViewerApp):
 def listen_to_server(app: ViewerApp):
     # print(app)
 
-    server_url = f"http://127.0.0.1:5000/events/{AGENT_UUID}"
+    server_url = f"http://127.0.0.1:5000/events/{app.uuid}"
 
     events = SSEClient(server_url)
 
@@ -286,7 +278,7 @@ def listen_to_server(app: ViewerApp):
 
 main_root = None
 
-def create_viewer(await_for_input=False, uuid=""):
+def create_viewer(await_for_input=False):
     global main_root
 
     if main_root is None:
@@ -301,10 +293,6 @@ def create_viewer(await_for_input=False, uuid=""):
 
     threading.Thread(target=listen_to_server, args=(app,), daemon=True).start()
 
-    
-    agent_viewers.AGENT_VIEWER[uuid] = app
-
     root.mainloop()
 
-    return app
 # if __name__ == "__main__":

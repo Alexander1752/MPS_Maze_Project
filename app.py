@@ -10,8 +10,6 @@ import maze
 import queue
 import random
 
-import agent_viewers
-
 from common.game_elements import Map, GameState, Pos, serialize_view, deserialize_view
 import common.tiles as tiles
 
@@ -43,7 +41,7 @@ VIEW_FIELD = 'view'
 MOVES_FIELD = 'moves'
 UUID_CURRENT_COUNTER = 0 # TODO change to a more suitable, random UUID scheme
 AGENTS : Dict[str, GameState] = {} # dict to identify agents using uuid
-# AGENT_VIEWER: Dict[str, viewerV2.ViewerApp] = {}
+AGENT_VIEWER: Dict[str, bool] = {}
 AGENTS_TIME : Dict[str, float] = {} # dict to identify the agent and the connection time
 FRIENDLY_MODE = False
 MAZE = None
@@ -86,11 +84,12 @@ def register_agent():
                 MAZE = Map.load_from_file("temp.png")
                 
             AGENTS[str(UUID_CURRENT_COUNTER)] = GameState(maps=[MAZE], moves=10, next_round_moves=10, xray_points=10)
+            AGENT_VIEWER[str(UUID_CURRENT_COUNTER)] = False
 
             EVENT_QUEUES[str(UUID_CURRENT_COUNTER)] = queue.Queue()
             ## need to keep track of the viewer, because of threading and root.mainloop, i cant return the instance of the 
             ## viewer. I will pass the argument of the uuid to identify the viewer when it is created and memorize the instance there
-            threading.Thread(target=viewerV2.create_viewer, args=(AWAIT_FOR_INPUT,str(UUID_CURRENT_COUNTER))).start()
+            threading.Thread(target=viewerV2.create_viewer, args=(AWAIT_FOR_INPUT,)).start()
             
             # Register the first time the client contacted the server
             AGENTS_TIME[str(UUID_CURRENT_COUNTER)] = int(time.time())
@@ -157,9 +156,9 @@ def receive_client_moves():
             return jsonify({"error": "Invalid number of moves"}), 400
         
         if AWAIT_FOR_INPUT:
-            while (agent_viewers.AGENT_VIEWER[agent_uuid].button_clicked is False):
+            while AGENT_VIEWER[agent_uuid] is False:
                 continue
-            agent_viewers.AGENT_VIEWER[agent_uuid].button_clicked = False
+            AGENT_VIEWER[agent_uuid] = False
 
         return jsonify(check_moves(agent_uuid, moves)), 200
 
@@ -282,6 +281,11 @@ def generate_events(agent_uuid):
             pos: Pos = EVENT_QUEUES[agent_uuid].get()
             time.sleep(0.1)
             yield f"data: {pos.x},{pos.y}\n\n"
+
+@server.route('/wait_for_input/<agent_uuid>')
+def wait_for_input(agent_uuid):
+    AGENT_VIEWER[agent_uuid] = True
+    return jsonify({}), 200
 
 @server.route('/events/<agent_uuid>')
 def stream(agent_uuid):
