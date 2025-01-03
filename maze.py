@@ -6,6 +6,7 @@ from typing import List
 
 from common.game_elements import Map, Pos, GameState, Dir
 import common.tiles as tiles
+import sys # TODO remove
 
 FIRST_PREFFERENCE = 70 # percent
 MAX_NUM_TRAPS_REDIRECT = 4
@@ -203,15 +204,9 @@ def generate_maze(width, height, seed=None, * , max_traps=0, retry=False):
     # Randomly choose entrance and exit locations with respect to the 50% rule
     entrance_idx = random.randint(0, len(loop_order) - path_count // 2 - 1)
     entrance = loop_order[entrance_idx]
-    exit_idx = random.randint(entrance_idx + path_count // 2, len(loop_order) - 1)
+    exit_idx = entrance_idx + path_count // 2
     exit = loop_order[exit_idx]
     loop_order = loop_order[entrance_idx : exit_idx + 1]
-
-    path_to_sol = Map(width=width, height=height)
-    path_to_sol.fill(0)
-
-    for pos in loop_order:
-        path_to_sol[pos] = 1 # is part of the solution path
 
     maze[entrance] = tiles.Entrance.code
     maze[exit] = tiles.Exit.code
@@ -219,9 +214,34 @@ def generate_maze(width, height, seed=None, * , max_traps=0, retry=False):
     print("Entrance:", entrance)
     print("Exit:", exit)
 
+    all_traps = [tiles.ForwardTrap, tiles.BackwardTrap, tiles.RewindTrap, tiles.MovesTrap]
+    total_max_traps = (path_count - len(loop_order)) // 3 # TODO figure out if enough
+    max_traps = min(total_max_traps // len(all_traps), max_traps)
+    print("Max traps for current maze:", max_traps)
+
+    generate_traps(maze, all_traps, max_traps, loop_order)
+
+    generate_aux_tiles(maze, max_traps)
+
+    return maze
+
+def generate_traps(maze: Map, all_traps: List[tiles.Trap], max_traps: int, loop_order: list):
+    height, width = maze.shape
+
+    path_to_sol = Map(width=width, height=height)
+    path_to_sol.fill(0)
+
+    for pos in loop_order:
+        path_to_sol[pos] = 1 # is part of the solution path
+
+    total_max_traps = len(all_traps) * max_traps
+
     # generate traps
-    for trap_type in [tiles.MovesTrap, tiles.ForwardTrap, tiles.BackwardTrap, tiles.RewindTrap]:
+    for idx, trap_type in enumerate(all_traps):
+        max_traps = min(total_max_traps // (len(all_traps) - idx), max_traps)
         num_trap = random.randint(0, max_traps)
+        total_max_traps -= num_trap
+
         for _ in range(num_trap):
             while True:
                 i = random.randint(0, height - 1)
@@ -234,29 +254,39 @@ def generate_maze(width, height, seed=None, * , max_traps=0, retry=False):
                 if maze[pos] != tiles.Path.code:
                     continue
 
-                valid = True
-                for neigh in neighbors(maze, pos, tiles.Path.code, False):
-                    if maze[neigh] != tiles.Path.code and maze[neigh] != tiles.Wall.code:
-                        valid = False
-                        break
+                trap_powers = [1, 2, 3, 4, 5]
+                random.shuffle(trap_powers)
 
-                    state = GameState(maps=[maze], pos=pos)
+                for n in trap_powers:
+                    maze[pos] = trap_type(n).code
+                    valid = True
+                    for neigh in neighbors(maze, pos, tiles.Path.code, False):
+                        if maze[neigh] != tiles.Path.code and maze[neigh] != tiles.Wall.code:
+                            valid = False
+                            break
 
-                    try:
-                        state.perform_command(Dir.get_direction(neigh, pos), max_num_traps_redirect=MAX_NUM_TRAPS_REDIRECT)
-                    except:
-                        valid = False
+                        # Only try visiting the trap when coming from a Path, can't start on a Wall
+                        if maze[neigh] == tiles.Path.code:
+                            try:
+                                state = GameState(maps=[maze], pos=pos)
+                                state.perform_command(Dir.get_direction(neigh, pos), max_num_traps_redirect=MAX_NUM_TRAPS_REDIRECT)
+                            except:
+                                valid = False
+                                break           
+
+                    if valid:
                         break
 
                 if valid:
                     break
 
-            trap = trap_type(random.randint(1, 5))
-            maze[i][j] = trap.code
+                maze[pos] = tiles.Path.code
 
-    # generate X-RAY points
+def generate_aux_tiles(maze: Map, max_aux_tiles: int):
+    height, width = maze.shape
+    # generate X-RAY points, Towers and Fogs
     for tile_type in [tiles.Xray, tiles.Fog, tiles.Tower]:
-        num_tiles = random.randint(0, max_traps)
+        num_tiles = random.randint(0, max_aux_tiles)
         for _ in range(num_tiles):
             while True:
                 i = random.randint(0, height - 1)
@@ -276,8 +306,6 @@ def generate_maze(width, height, seed=None, * , max_traps=0, retry=False):
                     break
     
             maze[i][j] = tile_type.code
-
-    return maze
 
 def main(args=None):
     parser = get_parser()
