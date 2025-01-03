@@ -139,6 +139,15 @@ def create_friendly_response():
 
     response['view'] = disguise_traps(current_game_state)
 
+    if VIEWER_FOG:
+        game_state = AGENTS[str(UUID_CURRENT_COUNTER)]
+        visibility = game_state.visibility()
+        first_pos  = (int(game_state.pos.x - visibility), int(game_state.pos.y - visibility))
+        second_pos = (int(game_state.pos.x + visibility), int(game_state.pos.y + visibility))
+
+        # Format is {"view": [x1, y1, x2, y2]}
+        EVENT_QUEUES[str(UUID_CURRENT_COUNTER)].put(json.dumps({'view': [*first_pos, *second_pos]}))
+
     return response
 
 

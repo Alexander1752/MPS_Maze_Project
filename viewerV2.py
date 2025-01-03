@@ -6,6 +6,7 @@ from PIL import Image, ImageTk, ImageDraw
 import requests
 import threading
 from sseclient_local import SSEClient
+import sys
 
 from typing import List, Tuple
 
@@ -347,8 +348,10 @@ main_root = None
 
 def create_viewer(await_for_input=False, fog=False):
     global main_root
+    is_first = False
 
     if main_root is None:
+        is_first = True
         main_root = tk.Tk()
         # Hides tk window
         main_root.withdraw()
@@ -358,8 +361,27 @@ def create_viewer(await_for_input=False, fog=False):
     app = ViewerApp(root, await_for_input, fog)
     get_character_position(app)
 
-    threading.Thread(target=listen_to_server, args=(app,), daemon=True).start()
+    if is_first:
+        threading.Thread(target=listen_to_server, args=(app,), daemon=True).start()
+        root.mainloop()
+    else:
+        listen_to_server(app)
 
-    root.mainloop()
+if __name__ == "__main__":
+    # Simple running, either run with 1 argument, which loads a maze and shows it, or 2 arguments, which saves the maze in color
+    root = tk.Tk()
+    app = ViewerApp(root, False)
 
-# if __name__ == "__main__":
+    app.load_maze(sys.argv[1])
+    app.draw_xray_points()
+    app.new_layer()
+    app.draw_path(app.maze.entrance.y, app.maze.entrance.x, AGENT_COLOR)
+    app.draw_path(app.maze.exit.y, app.maze.exit.x, (0, 255, 0))
+    app.draw_traps()
+    app.draw_portals()
+
+    if len(sys.argv) == 3:
+        app.update_images(rescale=True)
+        app.composite_image.save(sys.argv[2])
+    else:
+        app.root.mainloop()
