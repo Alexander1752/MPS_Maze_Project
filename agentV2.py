@@ -48,6 +48,11 @@ def get_parser():
         action="store_true",
         help="Makes the agent wait for ENTER to be pressed before sending commands to the server"
     )
+    parser.add_argument(
+        "--manual", "-m",
+        action="store_true",
+        help="Run in manual mode (the user plays as the agent)"
+    )
 
     return parser
 
@@ -279,6 +284,19 @@ def run(game_state: GameState, url, uuid, discovered_forward_traps: Set[Pos], wa
         print("Failed... Impossible Maze?")
         exit()
 
+def run_manual(game_state: GameState, url, uuid):
+    commands = list(input("Give the list of commands to be sent: "))
+    commands = commands[:game_state.MAX_MOVES_PER_TURN]
+
+    response = send_commands(url, uuid, commands)
+
+    if END in response:
+        if int(response[END]):
+            print("Maze Solved!")
+        else:
+            print("Maze Failed...")
+        exit()
+
 def main(args=None):
     parser = get_parser()
     args = parser.parse_args(args)
@@ -293,6 +311,9 @@ def main(args=None):
     game_state, uuid, discovered_forward_traps = connect(None, url, None, None)
     while True:
         # try:
+        if args.manual:
+            run_manual(game_state, url, uuid)
+        else:
             run(game_state, url, uuid, discovered_forward_traps, args.wait_for_input)
         # except Exception as e: # TODO
         #     logger.exception(e)
