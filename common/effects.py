@@ -20,7 +20,7 @@ class NoEffect(Effect):
 
 class WallEffect(Effect):
     def activate(self, game_state: 'ge.GameState', *, views: list=None, max_num_traps_redirect:int|None=None):
-        game_state.visited_pos.pop() # remove the newly added position that was "visited"
+        game_state.current_move_visited_pos.pop() # remove the newly added position that was "visited"
         game_state.move(ge.Dir.OPPOSITE[self._direction])
 
         if game_state.reduce_moves_switch:
@@ -40,11 +40,20 @@ class TrapEffect(Effect, ABC):
 class MovesDecreaseEffect(TrapEffect):
     def activate(self, game_state: 'ge.GameState', *, views: list=None, max_num_traps_redirect:int|None=None):
         first_trap(game_state)
-        game_state.decrease_next_round_moves(self._n if not game_state.in_rewind else -self._n)
+        num_moves = int(self._n) # if an unsigned numpy value was supplied (as from the Map)
+        game_state.decrease_next_round_moves(num_moves if not game_state.in_rewind else -num_moves)
 
 class XrayEffect(Effect):
     def activate(self, game_state: 'ge.GameState', *, views: list=None, max_num_traps_redirect:int|None=None):
         first_trap(game_state)
+
+        def undo_xray(state: 'ge.GameState', pos: ge.Pos, xray_points: int):
+            state.current_map[pos] = tiles.Xray.code # restore xray point
+            state.xray_points = xray_points
+
+        undo_func = (lambda state, pos, xray_points: lambda: undo_xray(state, pos, xray_points))(game_state, game_state.pos, game_state.xray_points)
+        game_state.current_move.append(undo_func)
+
         game_state.xray_points += 1
         game_state.current_map[game_state.pos] = tiles.Path.code # "delete" xray tile when first stepped on
 
@@ -59,19 +68,22 @@ class RewindEffect(TrapEffect):
         for _ in range(self._n):
             if len(game_state.prev_moves) == 0:
                 return
-            move = game_state.prev_moves.pop()
 
-            match move:
-                case 'X':
-                    game_state.xray_points += 1
-                case 'N' | 'S' | 'E' | 'W':
-                    game_state.move(ge.Dir.OPPOSITE[move], views=views, max_num_traps_redirect=max_num_traps_redirect)
-                case 'P':
-                    game_state.enter_portal(views=views)
-                case _:
-                    raise ValueError(f'"{move}" is not a valid move')
+            prev_move_positions = game_state.prev_moves_visited_pos.pop()
+            for pos in reversed(prev_move_positions):
+                if views:
+                    game_state.add_view(views.pop(0), pos=pos)
+                game_state.current_move_visited_pos.append(pos)
+
+            undo_funcs = game_state.prev_moves.pop()
+            while undo_funcs:
+                func = undo_funcs.pop()
+                func()
 
         game_state.in_rewind = prev_in_rewind
+        game_state.current_move_visited_pos.append(game_state.pos)
+        if views:
+            game_state.add_view(views[0])
 
 class PushForwardEffect(TrapEffect):
     def activate(self, game_state: 'ge.GameState', *, views: list=None, max_num_traps_redirect:int|None=None):

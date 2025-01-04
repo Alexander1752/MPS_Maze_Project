@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 from collections import namedtuple
+from collections.abc import Callable
 from enum import Enum
 import numpy as np
 import logging
 from PIL import Image
-from typing import List, Dict, Tuple, Union
+from typing import List, Dict, Tuple, Union, Any
 
 import common.tiles as tiles
 
@@ -206,7 +207,6 @@ class GameState:
     START_XRAY_POINTS = 10
     MAX_NUM_PREV_MOVES = 100
 
-    #TODO: add visibility 
     def __init__(
         self,
         *,
@@ -250,10 +250,11 @@ class GameState:
         self.xray_on = 0
 
         # List of previous moves (used for rewinding)
-        self.prev_moves = []
+        self.prev_moves: List[List[Callable[[], Any]]] = []
 
         # List of visited positions in the last move (since the last perform_command() call)
-        self.visited_pos: List[Pos] = []
+        self.prev_moves_visited_pos: List[List[Pos]] = []
+        self.current_move_visited_pos: List[Pos] = []
 
         # Used for disabling dropping moves when hitting a wall due to a trap
         self.reduce_moves_switch = True
@@ -298,15 +299,21 @@ class GameState:
             view_j = 0
             view_i += 1
 
-    # TODO: this will need to be changed -- ar fi bine sa dea return la vizibilitate. Pot sa fac chestia asta pe
-    # pe server si asta ar trebui sa dea macar un raspuns de ok sau nu.
-    def perform_command(self, move: str, *, views: list=None, max_num_traps_redirect:int|None=None): # XXX maybe consider returning here the command result, visibility around agent etc.
+    def perform_command(self, move: str, *, views: list=None, max_num_traps_redirect:int|None=None):
         """ Applies a command on this game state """
         self.moves -= 1
         self.xray_on = 0
-        self.prev_moves.append(move)
+
+        self.prev_moves.append([])
+        self.current_move = self.prev_moves[-1]
         self.prev_moves = self.prev_moves[-self.MAX_NUM_PREV_MOVES:] # limit to 100 prev moves
-        self.visited_pos = []
+
+        self.prev_moves_visited_pos.append([])
+        self.current_move_visited_pos = self.prev_moves_visited_pos[-1]
+        self.prev_moves_visited_pos = self.prev_moves_visited_pos[-self.MAX_NUM_PREV_MOVES:]
+
+        undo_func = teleport_undo_func(self, self.pos, self.xray_points, self.next_round_moves)
+        self.current_move.append(undo_func)
 
         match move:
             case 'X': # TODO support greater size xray
@@ -314,9 +321,12 @@ class GameState:
             case 'N' | 'S' | 'E' | 'W':
                 return self.move(move, views=views)
             case 'P':
+                undo_func = self.enter_portal
+                self.current_move[-1] = undo_func # overwrite the "default" undo_func
                 return self.enter_portal(views=views)
             case '': # empty command
-                self.prev_moves.pop() # remove empty command if it was just added
+                self.prev_moves.pop() # remove empty move if it was just added
+                self.prev_moves_visited_pos.pop()
                 return
             case _:
                 raise ValueError(f'"{move}" is not a valid move')
@@ -329,8 +339,8 @@ class GameState:
 
         self.pos = Dir.move(self.pos, direction) # move into the tile, even if wall (its effect will move us back where we started from)
 
-        if not self.visited_pos or self.visited_pos[-1] != self.pos:
-            self.visited_pos.append(self.pos)
+        if not self.current_move_visited_pos or self.current_move_visited_pos[-1] != self.pos:
+            self.current_move_visited_pos.append(self.pos)
 
         if views and self.current_map[self.pos] != tiles.Wall.code:
             self.add_view(views.pop(0))
@@ -342,7 +352,7 @@ class GameState:
         return '1'
 
     def enter_portal(self, *, views: list=None):
-        if tiles.CODE_TO_TYPE[self.current_map[self.pos]] != tiles.Portal:
+        if not self.in_rewind and tiles.CODE_TO_TYPE[self.current_map[self.pos]] != tiles.Portal:
             self.decrease_next_round_moves()
             return '0' # failure
 
@@ -366,7 +376,7 @@ class GameState:
             pair = self.current_map.portals[self.pos]
             self.pos = pair
 
-        self.visited_pos.append(self.pos)
+        self.current_move_visited_pos.append(self.pos)
         if views is not None:
             self.add_view(views.pop(0))
         return '1' # success
@@ -384,7 +394,7 @@ class GameState:
         if views is not None:
             self.add_view(views.pop(0))
 
-        self.visited_pos.append(self.pos)
+        self.current_move_visited_pos.append(self.pos)
         if self.xray_points <= 0:
             self.decrease_next_round_moves()
             return '0'
@@ -447,3 +457,10 @@ def deserialize_view(view: str) -> List[List[int]]:
     view_int = [[int(s.strip(chars)) for s in row] for row in view_str]
 
     return view_int
+
+def teleport_undo_func(game_state: GameState, pos: Pos, xray_points: int, next_round_moves: int) -> Callable[[], Any]:
+    def set_pos(game_state: GameState, pos: Pos, xray_points: int, next_round_moves: int):
+        game_state.pos = pos
+        game_state.xray_points = xray_points
+        game_state.next_round_moves = next_round_moves
+    return lambda: set_pos(game_state, pos, xray_points, next_round_moves)

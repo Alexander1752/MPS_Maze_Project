@@ -162,10 +162,6 @@ class Portal(Tile):
     def pair(self):
         return self._pair
 
-    def visit(self, direction) -> effects.Effect:
-        pass # TODO teleport to the other portal (if its position is known)
-
-
 # This is a list connecting the code of a tile to its corresponding class (see project page)
 CODE_TO_TYPE: List[Type[Tile] | None] = 256 * [None]
 CODE_TO_TYPE[0]   = Wall

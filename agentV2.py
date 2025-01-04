@@ -3,7 +3,7 @@ import argparse
 from collections import OrderedDict, deque
 from copy import copy
 import logging
-from typing import List, Dict, Any, TypeVar
+from typing import List, Dict, Set, Any, TypeVar
 import requests
 
 from common.game_elements import Pos, GameState, Dir, State, VisitNode , Map
@@ -65,7 +65,7 @@ def get_temp(map, dict: Dict[Pos, T], pos: Pos) -> T:
 
     return dict[pos]
 
-def check_path(map: Map, pos: Pos, parent: Pos):
+def check_path(map: Map, visited, temp_visited: Dict[Pos, VisitNode], pos: Pos, parent: Pos):
     if map[pos] == tiles.Exit.code:
         return True
 
@@ -87,6 +87,9 @@ def check_path(map: Map, pos: Pos, parent: Pos):
 
             neigh_code = get_temp(map, discovered, neigh)
             discovered[neigh] = DISCOVERED
+
+            if get_temp(visited, temp_visited, pos).state == State.VISITED:
+                neigh_code = DISCOVERED
 
             if neigh_code in [tiles.Exit.code, tiles.UnknownTile.code]:
                 return True
@@ -131,7 +134,7 @@ def dfs(game_state: GameState, temp_visited: Dict[Pos, VisitNode], visited_pos: 
             if tiles.CODE_TO_TYPE[game_state.current_map[new_pos]] in [tiles.BackwardTrap, tiles.RewindTrap]:
                 new_pos_node.state = State.WALL
 
-            if new_pos_node.state in [State.NEW, State.OPEN] and check_path(game_state.current_map, new_pos, pos):
+            if new_pos_node.state in [State.NEW, State.OPEN] and check_path(game_state.current_map, game_state.visited, temp_visited, new_pos, pos):
                 visited_pos.append(new_pos)
                 new_pos_node.state = State.OPEN
 
@@ -151,7 +154,7 @@ def dfs(game_state: GameState, temp_visited: Dict[Pos, VisitNode], visited_pos: 
     print("Visiting", prev_pos) # TODO remove
     return undo_move
 
-def connect(game_state: GameState | None, url, uuid):
+def connect(game_state: GameState | None, url, uuid, discovered_forward_traps: Set[Pos]):
     response = requests.post(url + REGISTER, json={UUID: uuid} if uuid else {})
     resp: dict = response.json()
 
@@ -169,7 +172,10 @@ def connect(game_state: GameState | None, url, uuid):
     else:
         game_state.add_view(resp.get(VIEW, None))
 
-    return game_state, uuid
+    if discovered_forward_traps is None:
+        discovered_forward_traps: Set[Pos] = set()
+
+    return game_state, uuid, discovered_forward_traps
 
 def send_commands(url, uuid, commands: list) -> Dict[str, str]:
     commands_str = ''.join(commands)
@@ -181,7 +187,7 @@ def send_commands(url, uuid, commands: list) -> Dict[str, str]:
     logger.debug(f"Received {response}")
     return response.json()
 
-def run(game_state: GameState, url, uuid, wait_for_input=False):
+def run(game_state: GameState, url, uuid, discovered_forward_traps: Set[Pos], wait_for_input=False):
     commands = []
     pos = game_state.pos
     temp_visited: Dict[Pos, VisitNode] = OrderedDict()
@@ -227,7 +233,7 @@ def run(game_state: GameState, url, uuid, wait_for_input=False):
             views = [views]
 
         game_state.perform_command(command, views=views)
-        all_visited_pos.extend(game_state.visited_pos)
+        all_visited_pos.extend(game_state.current_move_visited_pos)
 
     visited_after_first_trap = []
     if game_state.first_trap is not None:
@@ -248,22 +254,30 @@ def run(game_state: GameState, url, uuid, wait_for_input=False):
             game_state.visited[pos] = temp_visited[pos]
 
     # Commit changes for the positions after the first trap (if any)
+    new_forward_traps: Set[Pos] = set()
     for pos in visited_after_first_trap:
         if game_state.visited[pos].state == State.NEW:
             game_state.visited[pos].state = State.OPEN
             game_state.visited[pos].parent = prev_pos
 
         # Special case for the forward trap: if going over it again and we end up on it's parent, it is visited
-        # TODO take into account the case in which we step over twice over the same ForwardTrap due to other moves and/or traps, which marks it as fully visited when it is not
-        if tiles.CODE_TO_TYPE[game_state.current_map[prev_pos]] == tiles.ForwardTrap and \
-                pos == game_state.visited[prev_pos].parent:
-            game_state.visited[prev_pos].state = State.VISITED
-            visit_node(game_state.visited[pos], Dir.get_direction(pos, prev_pos))
+        if tiles.CODE_TO_TYPE[game_state.current_map[prev_pos]] == tiles.ForwardTrap:
+            new_forward_traps.add(prev_pos)
+            if prev_pos in discovered_forward_traps and pos == game_state.visited[prev_pos].parent:
+                game_state.visited[prev_pos].state = State.VISITED
+                visit_node(game_state.visited[pos], Dir.get_direction(pos, prev_pos))
 
         prev_pos = pos
 
+    # Add new forward traps to the discovered set
+    discovered_forward_traps |= new_forward_traps
+
     game_state.next_round_moves = int(response[MOVES])    
     game_state.new_round()
+
+    if game_state.current_map.entrance is not None and game_state.visited[game_state.current_map.entrance].state == State.VISITED:
+        print("Failed... Impossible Maze?")
+        exit()
 
 def main(args=None):
     parser = get_parser()
@@ -276,10 +290,10 @@ def main(args=None):
     if not url.startswith('http://'):
         url = 'http://' + url
 
-    game_state, uuid = connect(None, url, None)
+    game_state, uuid, discovered_forward_traps = connect(None, url, None, None)
     while True:
         # try:
-            run(game_state, url, uuid, args.wait_for_input)
+            run(game_state, url, uuid, discovered_forward_traps, args.wait_for_input)
         # except Exception as e: # TODO
         #     logger.exception(e)
         #     # print(e, trace)

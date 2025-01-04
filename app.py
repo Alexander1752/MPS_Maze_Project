@@ -165,7 +165,7 @@ def receive_client_moves():
 
         # print("Am primit de la agentul asta: " + agent_uuid)
 
-        if time.time() - AGENTS_TIME[agent_uuid] > MAX_TIME_ALLOWED:
+        if time.time() - AGENTS_TIME.get(agent_uuid, 0) > MAX_TIME_ALLOWED:
             # TODO: when a client gets over the allowed time limit, maybe remove the UUID and reset the connection
             return jsonify({'end':'0'}), 200
 
@@ -247,7 +247,7 @@ def check_moves(agent_uuid: str, moves: List[str]):
         command_result = AGENTS[agent_uuid].perform_command(move)
         response[command_no][COMMAND_RESULT_FIELD] = str(1 if command_result is None else command_result)
 
-        for pos in AGENTS[agent_uuid].visited_pos:
+        for pos in AGENTS[agent_uuid].current_move_visited_pos:
             # Format is {"pos": [x, y]}
             EVENT_QUEUES[agent_uuid].put(json.dumps({'pos': [int(pos.x), int(pos.y)]}))
 
@@ -257,11 +257,11 @@ def check_moves(agent_uuid: str, moves: List[str]):
             end_reached = True
             break
 
-        if len(AGENTS[agent_uuid].visited_pos) == 0:
-            AGENTS[agent_uuid].visited_pos = [AGENTS[agent_uuid].pos]
+        if len(AGENTS[agent_uuid].current_move_visited_pos) == 0:
+            AGENTS[agent_uuid].current_move_visited_pos = [AGENTS[agent_uuid].pos]
 
         views = []
-        for pos in AGENTS[agent_uuid].visited_pos:
+        for pos in AGENTS[agent_uuid].current_move_visited_pos:
             views.append(disguise_traps(AGENTS[agent_uuid], pos))
 
             if VIEWER_FOG:
