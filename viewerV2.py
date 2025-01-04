@@ -14,6 +14,7 @@ from common.game_elements import Map
 import common.tiles as tiles
 
 PIXELS_PER_SQUARE = 5
+INITIAL_SCALE = 4.0
 PAN_SPEED = 0.05
 REFRESH_INTERVAL = 200 # ms
 
@@ -42,7 +43,7 @@ class ViewerApp:
         self.fog = fog
 
         # Initialize canvas and scrollbars
-        self.canvas = Canvas(self.root, bg="black")
+        self.canvas = Canvas(self.root, bg="black", width=1920, height=1080)
         self.h_scroll = tk.Scrollbar(self.root, orient=tk.HORIZONTAL, command=self.canvas.xview)
         self.v_scroll = tk.Scrollbar(self.root, orient=tk.VERTICAL, command=self.canvas.yview)
 
@@ -69,7 +70,7 @@ class ViewerApp:
         self.image_container = None
 
         # Track zoom scale
-        self.scale = 1.0
+        self.scale = INITIAL_SCALE
 
         # Bind events
         self.root.bind("<MouseWheel>",  self.zoom)
@@ -116,6 +117,8 @@ class ViewerApp:
 
         self.update_images(rescale=False, auto_refresh=True)
 
+        self.center_on_character()
+
     def update_images(self, rescale=False, auto_refresh=False):
         # Resize images
         if not self.images:
@@ -141,10 +144,33 @@ class ViewerApp:
                 self.canvas.itemconfig(self.image_container, image=self.composed_tk_image)
 
             # Update scroll region
+            image_width = resized_composite.width
+            image_height = resized_composite.height
+            
             self.canvas.config(scrollregion=(0, 0, resized_composite.width, resized_composite.height))
 
         if auto_refresh:
             self.root.after(REFRESH_INTERVAL, self.update_images, False, True)
+
+    def center_on_character(self):
+        # Ensure window is updated
+        self.root.update_idletasks()
+        
+        # Get the current canvas dimensions
+        canvas_width = self.canvas.winfo_width()
+        canvas_height = self.canvas.winfo_height()
+
+        # Calculate character position in pixels
+        char_x = self.character_position[0] * PIXELS_PER_SQUARE * self.scale
+        char_y = self.character_position[1] * PIXELS_PER_SQUARE * self.scale
+
+        # Calculate scroll position to center the character
+        x_center = (char_x - canvas_width // 2) // (self.composite_image.width * self.scale)
+        y_center = (char_y - canvas_height // 2) // (self.composite_image.height * self.scale)
+
+        # Update the view
+        self.canvas.xview_moveto(x_center + 0.5)
+        self.canvas.yview_moveto(y_center + 0.5)
 
     def zoom(self, event):
         # Adjust scale
@@ -218,6 +244,7 @@ class ViewerApp:
         if self.maze[x, y] == tiles.Xray.code:
             self.draw_xray_points([(x, y)], tiles.Xray.color)
             self.maze[x, y] = tiles.Path.code
+        
 
     def new_layer(self, color=TRANSPARENT):
         # Create fully transparent image
@@ -323,6 +350,8 @@ def get_character_position(app: ViewerApp):
 
     if app.fog:
         app.draw_fog()
+        
+    app.center_on_character()
 
 def listen_to_server(app: ViewerApp):
     # print(app)
@@ -374,6 +403,11 @@ if __name__ == "__main__":
 
     app.load_maze(sys.argv[1])
     app.draw_xray_points()
+
+    app.character_position[0] = app.maze.entrance.y
+    app.character_position[1] = app.maze.entrance.x
+    app.center_on_character()
+
     app.new_layer()
     app.draw_path(app.maze.entrance.y, app.maze.entrance.x, AGENT_COLOR)
     app.draw_path(app.maze.exit.y, app.maze.exit.x, (0, 255, 0))
