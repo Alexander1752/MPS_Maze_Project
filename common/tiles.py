@@ -153,10 +153,29 @@ def hsv2rgb(h,s,v):
 
 class Portal(Tile):
     color = (54, 192, 241)
+    _first_portal = None
+    _last_portal = None
+
+    @staticmethod
+    def first_portal():
+        if Portal._first_portal is None:
+            Portal._first_portal = CODE_TO_TYPE.index(Portal)
+        return Portal._first_portal
+
+    @staticmethod
+    def last_portal():
+        if Portal._last_portal is None:
+            Portal._last_portal = len(CODE_TO_TYPE) - 1 - CODE_TO_TYPE[::-1].index(Portal)
+        return Portal._last_portal
+
     def __init__(self, code: int, pair: Union['Portal', None] = None):
         super().__init__(code)
         self._pair = pair
-        self.color = hsv2rgb((code - 150) / 25, 1, 1)
+
+        if code > Portal.last_portal() or code < Portal.first_portal():
+            raise ValueError(f'"Portal" should have code between {Portal.first_portal()} and {Portal.last_portal()}, but code {code} was provided')
+
+        self.color = hsv2rgb((code - Portal.first_portal()) / (Portal.last_portal() - Portal.first_portal() + 1), 1, 1)
 
     @property
     def pair(self):
