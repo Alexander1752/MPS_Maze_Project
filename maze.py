@@ -6,7 +6,6 @@ from typing import List
 
 from common.game_elements import Map, Pos, GameState, Dir
 import common.tiles as tiles
-import sys # TODO remove
 
 FIRST_PREFFERENCE = 70 # percent
 MAX_NUM_TRAPS_REDIRECT = 4
@@ -68,6 +67,11 @@ def get_parser():
         type=int,
         default=0,
         help="Max number of traps of each type."
+    )
+    parser.add_argument(
+        "--portals", "-p",
+        action="store_true",
+        help="Enable the generation of portals. (note - does nothing when max-traps=0)"
     )
 
     return parser
@@ -184,7 +188,7 @@ def generate_walls(width, height):
     return maze, path_count
 
 @retry(times=3) # TODO subject to change
-def generate_maze(width, height, seed=None, * , max_traps=0, retry=False):
+def generate_maze(width, height, seed=None, * , max_traps=0, retry=False, portals=True):
     if not retry:
         random.seed(seed)
 
@@ -194,12 +198,6 @@ def generate_maze(width, height, seed=None, * , max_traps=0, retry=False):
 
     maze, path_count = generate_walls(width, height)
     loop_order = maze_order(maze)
-
-    # TODO remove
-    tmp = maze.copy()
-    for pos in loop_order:
-        tmp[pos] = tiles.Fog.code
-    tmp.write_to_file("temp.png")
 
     # Randomly choose entrance and exit locations with respect to the 50% rule
     entrance_idx = random.randint(0, len(loop_order) - path_count // 2 - 1)
@@ -222,6 +220,9 @@ def generate_maze(width, height, seed=None, * , max_traps=0, retry=False):
     generate_traps(maze, all_traps, max_traps, loop_order)
 
     generate_aux_tiles(maze, max_traps)
+
+    if portals:
+        generate_portals(maze, max_traps)
 
     return maze
 
@@ -307,11 +308,48 @@ def generate_aux_tiles(maze: Map, max_aux_tiles: int):
     
             maze[i][j] = tile_type.code
 
+def generate_portals(maze: Map, max_portals: int):
+    height, width = maze.shape
+
+    first_portal = tiles.Portal.first_portal()
+    max_portals = min(max_portals // 2, tiles.Portal.last_portal() - first_portal + 1)
+
+    last_portal = random.randint(first_portal, first_portal + max_portals)
+    # generate portals
+    portal_codes = iter(range(first_portal, last_portal))
+    pair_portal = None
+    pair_code = None
+    for _ in range(2 * first_portal, 2 * last_portal):
+        while True:
+            i = random.randint(0, height - 1)
+            j = random.randint(0, width - 1)
+            pos = Pos(i, j)
+
+            if maze[pos] != tiles.Path.code:
+                continue
+
+            valid = True
+            for neigh in neighbors(maze, pos, tiles.Path.code, False):
+                if maze[neigh] != tiles.Path.code and maze[neigh] != tiles.Wall.code:
+                    valid = False
+                    break
+
+            if valid:
+                break
+
+        if pair_portal is None:
+            pair_portal = Pos(i, j)
+            pair_code = next(portal_codes)
+        else:
+            maze[pair_portal] = pair_code
+            maze[i][j] = pair_code
+            pair_portal = None
+
 def main(args=None):
     parser = get_parser()
     args = parser.parse_args(args)
 
-    maze = generate_maze(args.width, args.height, max_traps=args.max_traps, seed=args.seed)
+    maze = generate_maze(args.width, args.height, max_traps=args.max_traps, seed=args.seed, portals=args.portals)
 
     # Convert maze to image
     maze.write_to_file(args.output)
