@@ -18,7 +18,8 @@ class State(int, Enum):
     WALL    = 3
 
 class VisitNode:
-    def __init__(self, *, w_visited=False, e_visited=False, n_visited=False, s_visited=False, parent: Pos | None=None, state: State=State.NEW):
+    def __init__(self, *, p_visited=True, w_visited=False, e_visited=False, n_visited=False, s_visited=False, parent: Pos | None=None, state: State=State.NEW):
+        self.p_visited = p_visited
         self.w_visited = w_visited
         self.e_visited = e_visited
         self.n_visited = n_visited
@@ -164,7 +165,7 @@ class Map(np.ndarray):
     
     @property
     def portals(self):
-        portals_pos = list(np.argwhere((self >= 150) & (self <= 169)))
+        portals_pos = list(np.argwhere((self >= tiles.Portal.first_portal()) & (self <= tiles.Portal.last_portal())))
 
         portal_codes: Dict[int, List[Pos]] = {}
         for portal in portals_pos:
@@ -294,6 +295,10 @@ class GameState:
                     else:
                         # if it's not a trap, write whatever we received
                         self.current_map[i][j] = new_val.code
+
+                        if new_val.type == tiles.Portal and old_val.type == tiles.UnknownTile:
+                            # Encountered a new portal, mark it as such
+                            self.visited[i][j].p_visited = False
 
                 view_j += 1
             view_j = 0
