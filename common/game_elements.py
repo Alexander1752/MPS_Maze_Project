@@ -324,7 +324,7 @@ class GameState:
             case 'X': # TODO support greater size xray
                 return self.use_xray(views)
             case 'N' | 'S' | 'E' | 'W':
-                return self.move(move, views=views)
+                return self.move(move, views=views, max_num_traps_redirect=max_num_traps_redirect)
             case 'P':
                 undo_func = self.enter_portal
                 self.current_move[-1] = undo_func # overwrite the "default" undo_func
@@ -342,7 +342,12 @@ class GameState:
         if max_num_traps_redirect is not None and max_num_traps_redirect < 0:
             raise ValueError("Too many trap redirects")
 
-        self.pos = Dir.move(self.pos, direction) # move into the tile, even if wall (its effect will move us back where we started from)
+        new_pos = Dir.move(self.pos, direction) # move into the tile, even if wall (its effect will move us back where we started from)
+
+        if tiles.CODE_TO_TYPE[self.current_map[self.pos]] == tiles.ForwardTrap and self.current_map[new_pos] == tiles.Wall.code:
+            raise ValueError("ForwardTrap next to a wall")
+
+        self.pos = new_pos
 
         if not self.current_move_visited_pos or self.current_move_visited_pos[-1] != self.pos:
             self.current_move_visited_pos.append(self.pos)

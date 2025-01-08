@@ -41,7 +41,7 @@ class MovesDecreaseEffect(TrapEffect):
     def activate(self, game_state: 'ge.GameState', *, views: list=None, max_num_traps_redirect:int|None=None):
         first_trap(game_state)
         num_moves = int(self._n) # if an unsigned numpy value was supplied (as from the Map)
-        game_state.decrease_next_round_moves(num_moves if not game_state.in_rewind else -num_moves)
+        game_state.decrease_next_round_moves(num_moves)
 
 class XrayEffect(Effect):
     def activate(self, game_state: 'ge.GameState', *, views: list=None, max_num_traps_redirect:int|None=None):

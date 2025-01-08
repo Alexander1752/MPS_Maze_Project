@@ -279,7 +279,7 @@ def run(game_state: GameState, url, uuid, discovered_forward_traps: Set[Pos], wa
         all_visited_pos.extend(game_state.current_move_visited_pos)
 
     # Check if last command was entering a portal
-    if command == 'P' and command_dict["successful"] == "1":
+    if commands and command == 'P' and command_dict["successful"] == "1":
         entered_portal = True
         all_visited_pos.pop() # remove portal pos (will be treated separately)
     else:

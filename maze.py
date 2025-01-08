@@ -255,6 +255,17 @@ def generate_traps(maze: Map, all_traps: List[tiles.Trap], max_traps: int, loop_
                 if maze[pos] != tiles.Path.code:
                     continue
 
+                if trap_type == tiles.ForwardTrap:
+                    left_right_neigh = [Dir.move(pos, Dir.W), Dir.move(pos, Dir.E)]
+                    walls = [maze[neigh] == tiles.Wall.code for neigh in left_right_neigh]
+                    if any(walls) and not all(walls):
+                        continue
+
+                    up_down_neigh = [Dir.move(pos, Dir.N), Dir.move(pos, Dir.S)]
+                    walls = [maze[neigh] == tiles.Wall.code for neigh in up_down_neigh]
+                    if any(walls) and not all(walls):
+                        continue
+
                 trap_powers = [1, 2, 3, 4, 5]
                 random.shuffle(trap_powers)
 
