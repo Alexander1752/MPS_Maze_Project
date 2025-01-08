@@ -2,6 +2,7 @@
 import argparse
 from collections import namedtuple
 import logging
+import time
 from typing import List, Dict
 import requests
 
@@ -27,6 +28,11 @@ MOVES = 'moves'
 INPUT = 'input'
 COMMAND = 'command_'
 END = 'end'
+
+TOTAL_ROUNDS = 0
+TOTAL_MOVES = 0
+TOTAL_XRAY = 0
+START_TIME = 0
 
 Node = namedtuple("Node", "x y dir")
 
@@ -62,15 +68,12 @@ def bfs(game_state: GameState, stack: List[Node]):
             elif game_state.visited[pos].state == State.NEW:
                 game_state.visited[pos].state = State.OPEN
                 stack.append(Node(*pos, Dir.N))
-                # print("Visiting", pos) # TODO remove
                 return node.dir
     else:
         game_state.visited[node.x][node.y].state = State.VISITED
         stack.pop()
         prev_node = stack[-1]
         undo_move = Dir.get_direction(node, prev_node)
-        # prev_pos = Dir.move(node, undo_move) # TODO remove
-        # print("Visiting", prev_pos) # TODO remove
         return undo_move
 
     return bfs(game_state, stack)
@@ -106,6 +109,11 @@ def send_commands(url, uuid, commands: list) -> Dict[str, str]:
     return response.json()
 
 def run(game_state: GameState, stack: List[Node], url, uuid):
+    global TOTAL_ROUNDS
+    global TOTAL_MOVES
+    global TOTAL_XRAY
+    global START_TIME
+
     commands = []
     for _ in range(game_state.moves):
         direction = bfs(game_state, stack)
@@ -115,17 +123,25 @@ def run(game_state: GameState, stack: List[Node], url, uuid):
 
     if len(commands) == 0 and game_state.xray_points > 0:
         commands = ['X']
+        TOTAL_XRAY += 1
 
-    # print("Sending", commands) # TODO remove
+    TOTAL_MOVES += len(commands)
+    TOTAL_ROUNDS += 1
 
     response = send_commands(url, uuid, commands)
 
     if END in response:
-        print("X-Ray points used:", game_state.START_XRAY_POINTS - game_state.xray_points)
+        end_time = time.time()
         if int(response[END]):
             print("Maze Solved!")
         else:
             print("Maze Failed...")
+
+        print("X-Ray points used:", TOTAL_XRAY)
+        print("Total moves made:", TOTAL_MOVES)
+        print("Total turns:", TOTAL_ROUNDS)
+        print("Time:", round(end_time - START_TIME, 2), "seconds")
+
         exit()
 
     commands = sorted([(int(key[len(COMMAND):]), val) for key, val in response.items() if key.startswith(COMMAND)])
@@ -139,6 +155,11 @@ def run(game_state: GameState, stack: List[Node], url, uuid):
     game_state.new_round()
 
 def main(args=None):
+    global TOTAL_ROUNDS
+    global TOTAL_MOVES
+    global TOTAL_XRAY
+    global START_TIME
+
     parser = get_parser()
     args = parser.parse_args(args)
 
@@ -151,6 +172,7 @@ def main(args=None):
 
     game_state, uuid, stack = connect(None, None, url, None)
 
+    START_TIME = time.time()
     while True:
         # try:
             run(game_state, stack, url, uuid)

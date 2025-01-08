@@ -3,6 +3,7 @@ import argparse
 from collections import OrderedDict, deque
 from copy import copy
 import logging
+import time
 from typing import List, Dict, Set, Any, TypeVar
 import requests
 
@@ -28,6 +29,11 @@ MOVES = 'moves'
 INPUT = 'input'
 COMMAND = 'command_'
 END = 'end'
+
+TOTAL_ROUNDS = 0
+TOTAL_MOVES = 0
+TOTAL_XRAY = 0
+START_TIME = 0
 
 def get_parser():
     # Create the argument parser
@@ -173,7 +179,6 @@ def dfs(game_state: GameState, temp_visited: Dict[Pos, VisitNode], visited_pos: 
                 if new_pos_node.parent is None:
                     new_pos_node.parent = pos
 
-                print("Visiting", new_pos) # TODO remove
                 return dir
 
         visit_node(node, dir)
@@ -188,7 +193,6 @@ def dfs(game_state: GameState, temp_visited: Dict[Pos, VisitNode], visited_pos: 
 
     undo_move = Dir.get_direction(pos, prev_pos)
     visited_pos.append(prev_pos)
-    print("Visiting", prev_pos) # TODO remove
     return undo_move
 
 def connect(game_state: GameState | None, url, uuid, discovered_forward_traps: Set[Pos]):
@@ -225,6 +229,11 @@ def send_commands(url, uuid, commands: list) -> Dict[str, Any]:
     return response.json()
 
 def run(game_state: GameState, url, uuid, discovered_forward_traps: Set[Pos], wait_for_input=False):
+    global TOTAL_ROUNDS
+    global TOTAL_MOVES
+    global TOTAL_XRAY
+    global START_TIME
+
     commands = []
     pos = game_state.pos
     temp_visited: Dict[Pos, VisitNode] = OrderedDict()
@@ -241,10 +250,13 @@ def run(game_state: GameState, url, uuid, discovered_forward_traps: Set[Pos], wa
     if len(commands) == 0:
         if game_state.xray_points > 0:
             commands = ['X']
+            TOTAL_XRAY += 1
         else:
             # Just try a random move and see what happens
             commands = [Dir.N]
-            # TODO take into account the fact that the move might've actually taken place (didn't hit a wall)
+
+    TOTAL_MOVES += len(commands)
+    TOTAL_ROUNDS += 1
 
     if wait_for_input:
         print("Sending", commands)
@@ -253,11 +265,17 @@ def run(game_state: GameState, url, uuid, discovered_forward_traps: Set[Pos], wa
     response = send_commands(url, uuid, commands)
 
     if END in response:
-        print("X-Ray points used:", game_state.START_XRAY_POINTS - game_state.xray_points)
+        end_time = time.time()
         if int(response[END]):
             print("Maze Solved!")
         else:
             print("Maze Failed...")
+
+        print("X-Ray points used:", TOTAL_XRAY)
+        print("Total moves made:", TOTAL_MOVES)
+        print("Total turns:", TOTAL_ROUNDS)
+        print("Time:", round(end_time - START_TIME, 2), "seconds")
+
         exit()
 
     commands = sorted([(int(key[len(COMMAND):]), val) for key, val in response.items() if key.startswith(COMMAND)])
@@ -348,6 +366,11 @@ def run_manual(game_state: GameState, url, uuid):
         exit()
 
 def main(args=None):
+    global TOTAL_ROUNDS
+    global TOTAL_MOVES
+    global TOTAL_XRAY
+    global START_TIME
+
     parser = get_parser()
     args = parser.parse_args(args)
 
@@ -359,6 +382,8 @@ def main(args=None):
         url = 'http://' + url
 
     game_state, uuid, discovered_forward_traps = connect(None, url, None, None)
+
+    START_TIME = time.time()
     while True:
         # try:
         if args.manual:
