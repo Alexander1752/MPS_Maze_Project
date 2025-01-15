@@ -1,24 +1,27 @@
-# Miercuri-16-3
+# MPS Maze Project
+Enunțul acestui proiect se poate găsi [aici](https://ocw.cs.pub.ro/courses/mps/proiect?rev=1732091997).
 
+## Demo
+![demo_gif_of_project](demo.gif)
 
 ## Structura echipei
 * Project Manager:
     - Ionela-Cristina Strîmbeanu 342C1
 
-* Team Leader: 
+* Team Leader:
     - Mihai-Lucian Pandelica 342C1
 
-* Software Developer: 
+* Software Developer:
     - Cristian-Alexandru Chiriac 342C1
 
-    -  Alexandru-Constantin Munteanu 342C1 
+    - Alexandru-Constantin Munteanu 342C1
 
 * Tester:
     - Preda Diana 344C1
 
 ## Tehnologii Utilizate
 * Limbaj de Programare: Python
-* Framework: Flask
+* Framework: Flask, Tkinter
 * Version Control: Git
 
 ## Metodologie de Dezvoltare
